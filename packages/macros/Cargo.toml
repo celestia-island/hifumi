@@ -1,0 +1,23 @@
+[package]
+name = "hifumi-macros"
+version.workspace = true
+edition.workspace = true
+
+publish = true
+description = "A serialization library for migrating data between different versions"
+license = "Apache-2.0"
+repository = "https://github.com/celestia-island/hifumi"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+derive_more = { workspace = true }
+
+serde = { workspace = true }
+
+syn = { version = "^2", features = ["full"] }
+proc-macro2 = { version = "^1", features = ["span-locations"] }
+quote = "^1"
