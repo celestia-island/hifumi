@@ -32,18 +32,7 @@ mod test {
             c: i32,
         }
 
-        #[old_version]
-        {
-            #[version(0.1)]
-            #[derive(Debug, Clone, PartialEq)]
-            struct {
-                a: i32,
-                b: i32,
-                c: i32,
-            }
-
-            migration!(0.1 => 0.2);
-        }
+        migration!(0.1 => 0.2);
     }
 
     #[test]
@@ -56,27 +45,10 @@ mod test {
             c: i32,
         }
 
-        #[old_version]
-        {
-            #[version(0.2)]
-            #[derive(Debug, Clone, PartialEq)]
-            struct {
-                a: i32,
-                b: i32,
-                c: i32,
-            }
-
-            migration!(0.2 => 0.3);
-
-            #[version(0.1)]
-            #[derive(Debug, Clone, PartialEq)]
-            struct {
-                a: i32,
-                b: i32,
-            }
-
-            migration!(0.1 => 0.2);
-        }
+        migration!(0.2 => 0.3 {
+            + c: i32
+        });
+        migration!(0.1 => 0.2);
     }
 
     #[test]
