@@ -1,3 +1,5 @@
+pub use _macros::{migration, version};
+
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use semver::Version;
