@@ -12,7 +12,7 @@ repository = "https://github.com/celestia-island/hifumi"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-hifumi-macros = { path = "../macros", version = "=0.1.0" }
+_macros = { path = "../macros", version = "=0.1.0", package = "hifumi-macros" }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
