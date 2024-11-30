@@ -5,9 +5,13 @@ use syn::parse_macro_input;
 mod template;
 mod tools;
 
+use tools::DeriveVersion;
+
 #[proc_macro_attribute]
 pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
-    todo!("implement version")
+    let attr: DeriveVersion = parse_macro_input!(attr);
+
+    quote! {}.into()
 }
 
 #[proc_macro]
