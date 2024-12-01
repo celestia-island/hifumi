@@ -5,7 +5,7 @@ use syn::parse_macro_input;
 mod template;
 mod tools;
 
-use tools::DeriveVersion;
+use tools::{DeriveVersion, Migration};
 
 #[proc_macro_attribute]
 pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -16,7 +16,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn migration(input: TokenStream) -> TokenStream {
-    todo!("implement migration")
+    let attr: Migration = parse_macro_input!(input);
 
     /*
         生成的大概长这样：
@@ -113,4 +113,6 @@ pub fn migration(input: TokenStream) -> TokenStream {
             }
         }
     */
+
+    quote! {}.into()
 }
