@@ -1,17 +1,24 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse_macro_input;
+use syn::{parse_macro_input, ItemStruct};
 
 mod template;
 mod tools;
 
+use template::generate_current_version_struct;
 use tools::{DeriveVersion, Migration};
 
 #[proc_macro_attribute]
 pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr: DeriveVersion = parse_macro_input!(attr);
 
-    quote! {}.into()
+    // Get the struct's name
+    let input = parse_macro_input!(input as ItemStruct);
+    let name = &input.ident;
+
+    generate_current_version_struct(name.clone(), attr)
+        .expect("Failed to generate current version struct")
+        .into()
 }
 
 #[proc_macro]
