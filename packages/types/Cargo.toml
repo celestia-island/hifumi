@@ -19,8 +19,6 @@ async-trait = { workspace = true }
 derive_more = { workspace = true }
 
 serde = { workspace = true }
-chrono = { workspace = true }
-semver = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
