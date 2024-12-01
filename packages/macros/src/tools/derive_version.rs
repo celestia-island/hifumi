@@ -1,6 +1,6 @@
 use syn::{
     parse::{Parse, ParseStream},
-    Expr,
+    Expr, Ident,
 };
 
 #[derive(Debug, Clone)]
