@@ -101,8 +101,17 @@ fn decl_old_version_expand() -> Result<()> {
     #[derive(Debug, Clone, PartialEq)]
     struct Test {
         a: i32,
-        b: i32,
+        b: String,
         c: i32,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[allow(non_camel_case_types)]
+    #[doc(hidden)]
+    #[serde(untagged)]
+    enum _Test_0_1_b {
+        _0_1(i32),
+        _0_2(String),
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -113,9 +122,9 @@ fn decl_old_version_expand() -> Result<()> {
         #[serde(rename = "$version")]
         version: String,
 
-        a: i32,
-        b: i32,
-        c: i32,
+        a: Option<i32>,
+        b: Option<_Test_0_1_b>,
+        c: Option<i32>,
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,7 +138,7 @@ fn decl_old_version_expand() -> Result<()> {
         fn from(t: Test_0_1) -> Self {
             Self {
                 a: t.a,
-                b: t.b,
+                b: t.b.to_string(),
                 c: 0,
             }
         }
@@ -142,9 +151,9 @@ fn decl_old_version_expand() -> Result<()> {
         {
             _Test_outer {
                 version: "0.2".to_string(),
-                a: self.a,
-                b: self.b,
-                c: self.c,
+                a: Some(self.a.clone()),
+                b: Some(_Test_0_1_b::_0_2(self.b.clone())),
+                c: Some(self.c.clone()),
             }
             .serialize(serializer)
         }
@@ -155,23 +164,56 @@ fn decl_old_version_expand() -> Result<()> {
         where
             D: serde::Deserializer<'de>,
         {
-            let _Test_outer { a, b, c, .. } = _Test_outer::deserialize(deserializer)?;
-            Ok(Test { a, b, c })
+            let value = _Test_outer::deserialize(deserializer)?;
+
+            match value.version.as_str() {
+                "0.1" => {
+                    let value = Test_0_1 {
+                        a: value.a.unwrap(),
+                        b: match value.b.unwrap() {
+                            _Test_0_1_b::_0_1(b) => b,
+                            _ => return Err(serde::de::Error::custom("Invalid version")),
+                        },
+                    };
+                    Ok(Test::from(value))
+                }
+                "0.2" => Ok(Test {
+                    a: value.a.unwrap(),
+                    b: match value.b.unwrap() {
+                        _Test_0_1_b::_0_2(b) => b,
+                        _ => return Err(serde::de::Error::custom("Invalid version")),
+                    },
+                    c: value.c.unwrap(),
+                }),
+                _ => Err(serde::de::Error::custom("Invalid version")),
+            }
         }
     }
 
     assert_eq!(
-        "{\"$version\":\"0.2\",\"a\":1,\"b\":2,\"c\":0}",
-        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?
+        "{\"$version\":\"0.2\",\"a\":1,\"b\":\"2\",\"c\":3}",
+        serde_json::to_string(&Test {
+            a: 1,
+            b: "2".to_string(),
+            c: 3
+        })?
     );
     assert_eq!(
-        Test { a: 1, b: 2, c: 0 },
-        serde_json::from_str::<Test>("{\"$version\":\"0.2\",\"a\":1,\"b\":2,\"c\":3}")?
+        Test {
+            a: 1,
+            b: "2".to_string(),
+            c: 3
+        },
+        serde_json::from_str::<Test>("{\"$version\":\"0.2\",\"a\":1,\"b\":\"2\",\"c\":3}")?
     );
 
     assert_eq!(
-        "{\"$version\":\"0.1\",\"a\":1,\"b\":2}",
-        serde_json::to_string(&Test { a: 1, b: 2, c: 0 })?
+        serde_json::from_str::<Test>("{\"$version\":\"0.1\",\"a\":1,\"b\":2}")?,
+        Test {
+            a: 1,
+            b: "2".to_string(),
+            c: 0
+        }
     );
 
     Ok(())
