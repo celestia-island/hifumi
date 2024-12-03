@@ -87,13 +87,12 @@ fn decl_single_version_with_suffix() {
 fn decl_old_version() {
     #[version("0.2")]
     #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2")]
     struct Test {
         a: i32,
         b: i32,
         c: i32,
     }
-
-    migration!(Test "0.1" => "0.2");
 }
 
 #[test]
@@ -223,16 +222,15 @@ fn decl_old_version_expand() -> Result<()> {
 fn decl_multiple_old_versions() {
     #[version("0.3")]
     #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.2" => "0.3" {
+            + c: i32
+        })]
+    #[migration("0.1" => "0.2")]
     struct Test {
         a: i32,
         b: i32,
         c: i32,
     }
-
-    migration!(Test "0.2" => "0.3" {
-        + c: i32
-    });
-    migration!(Test "0.1" => "0.2");
 }
 
 #[test]
