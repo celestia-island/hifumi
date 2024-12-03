@@ -1,15 +1,14 @@
 use anyhow::Result;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Ident;
 
-use crate::tools::DeriveVersion;
+use crate::tools::{DeriveVersion, Migration};
 
 pub(crate) fn generate_current_version_struct(
-    name: Ident,
-    input: DeriveVersion,
+    attr: DeriveVersion,
+    input: Migration,
 ) -> Result<TokenStream> {
-    dbg!(name, input);
+    dbg!(attr, input);
 
     Ok(quote! {})
 }
