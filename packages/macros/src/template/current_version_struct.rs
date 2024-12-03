@@ -8,7 +8,20 @@ pub(crate) fn generate_current_version_struct(
     attr: DeriveVersion,
     input: Migration,
 ) -> Result<TokenStream> {
-    dbg!(attr, input);
+    let Migration {
+        versions,
+        extra_macros,
+        struct_data,
+    } = input;
 
-    Ok(quote! {})
+    let extra_macros = extra_macros.iter().map(|(key, value)| {
+        quote! {
+            #[#key #value]
+        }
+    });
+
+    Ok(quote! {
+        #(#extra_macros)*
+        #struct_data
+    })
 }
