@@ -3,6 +3,7 @@ use syn::parse_macro_input;
 
 mod template;
 mod tools;
+mod utils;
 
 use template::generate_current_version_struct;
 use tools::{DeriveVersion, Migration};
