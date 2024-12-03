@@ -1,5 +1,5 @@
 use anyhow::Result;
-use hifumi::{migration, version};
+use hifumi::version;
 use serde::{Deserialize, Serialize};
 
 #[test]

@@ -1,4 +1,4 @@
-pub use _macros::{migration, version};
+pub use _macros::version;
 
 use anyhow::Result;
 

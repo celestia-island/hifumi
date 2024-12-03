@@ -1,4 +1,4 @@
-use hifumi::{migration, version};
+use hifumi::version;
 
 #[test]
 fn add_field() {
