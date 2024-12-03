@@ -47,24 +47,10 @@ fn decl_old_version_expand() -> Result<()> {
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     #[allow(non_camel_case_types)]
-    #[doc(hidden)]
-    #[serde(untagged)]
-    enum _Test_0_1_b {
-        _0_1(i32),
-        _0_2(String),
-    }
-
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    #[allow(non_camel_case_types)]
-    #[doc(hidden)]
-    struct _Test_outer {
-        #[doc(hidden)]
-        #[serde(rename = "$version")]
-        version: String,
-
-        a: Option<i32>,
-        b: Option<_Test_0_1_b>,
-        c: Option<i32>,
+    struct Test_0_2 {
+        a: i32,
+        b: String,
+        c: i32,
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,7 +60,18 @@ fn decl_old_version_expand() -> Result<()> {
         b: i32,
     }
 
-    impl From<Test_0_1> for Test {
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[allow(non_camel_case_types)]
+    #[doc(hidden)]
+    #[serde(tag = "$version")]
+    enum _Test_outer {
+        #[serde(rename = "0.1")]
+        _0_1(Test_0_1),
+        #[serde(rename = "0.2")]
+        _0_2(Test_0_2),
+    }
+
+    impl From<Test_0_1> for Test_0_2 {
         fn from(t: Test_0_1) -> Self {
             Self {
                 a: t.a,
@@ -84,18 +81,53 @@ fn decl_old_version_expand() -> Result<()> {
         }
     }
 
+    impl From<Test_0_2> for Test {
+        fn from(t: Test_0_2) -> Self {
+            Self {
+                a: t.a,
+                b: t.b,
+                c: t.c,
+            }
+        }
+    }
+
+    impl From<Test> for Test_0_2 {
+        fn from(t: Test) -> Self {
+            Self {
+                a: t.a,
+                b: t.b,
+                c: t.c,
+            }
+        }
+    }
+
+    impl From<_Test_outer> for Test {
+        fn from(t: _Test_outer) -> Self {
+            let val: Test_0_2 = match t {
+                _Test_outer::_0_1(val) => val.into(),
+                _Test_outer::_0_2(val) => val,
+            };
+            val.into()
+        }
+    }
+
+    impl From<_Test_outer> for Test_0_1 {
+        fn from(t: _Test_outer) -> Self {
+            match t {
+                _Test_outer::_0_1(val) => val,
+                _Test_outer::_0_2(_) => {
+                    unimplemented!("Cannot convert new version to old version")
+                }
+            }
+        }
+    }
+
     impl Serialize for Test {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            _Test_outer {
-                version: "0.2".to_string(),
-                a: Some(self.a.clone()),
-                b: Some(_Test_0_1_b::_0_2(self.b.clone())),
-                c: Some(self.c.clone()),
-            }
-            .serialize(serializer)
+            _Test_outer::_0_2(self.to_owned().into()).serialize(serializer)
         }
     }
 
@@ -104,29 +136,8 @@ fn decl_old_version_expand() -> Result<()> {
         where
             D: serde::Deserializer<'de>,
         {
-            let value = _Test_outer::deserialize(deserializer)?;
-
-            match value.version.as_str() {
-                "0.1" => {
-                    let value = Test_0_1 {
-                        a: value.a.unwrap(),
-                        b: match value.b.unwrap() {
-                            _Test_0_1_b::_0_1(b) => b,
-                            _ => return Err(serde::de::Error::custom("Invalid version")),
-                        },
-                    };
-                    Ok(Test::from(value))
-                }
-                "0.2" => Ok(Test {
-                    a: value.a.unwrap(),
-                    b: match value.b.unwrap() {
-                        _Test_0_1_b::_0_2(b) => b,
-                        _ => return Err(serde::de::Error::custom("Invalid version")),
-                    },
-                    c: value.c.unwrap(),
-                }),
-                _ => Err(serde::de::Error::custom("Invalid version")),
-            }
+            let val = _Test_outer::deserialize(deserializer)?;
+            Ok(val.into())
         }
     }
 
