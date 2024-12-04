@@ -9,9 +9,9 @@ pub(crate) fn generate_current_version_struct(
     input: Migration,
 ) -> Result<TokenStream> {
     let Migration {
-        versions,
         extra_macros,
         struct_data,
+        ..
     } = input;
 
     let extra_macros = extra_macros.iter().map(|(key, value)| {
