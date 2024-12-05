@@ -8,9 +8,10 @@ mod template;
 mod tools;
 mod utils;
 
-use template::{generate_current_version_struct, generate_impl_from, generate_old_version_structs};
+use template::{
+    generate_current_version_struct, generate_impl_froms, generate_old_version_structs,
+};
 use tools::{DeriveVersion, Migration};
-use utils::generate_ident;
 
 #[proc_macro_attribute]
 pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -62,45 +63,39 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     .expect("Failed to generate old version structs");
 
     // Confirm the order of the versions
-    let impl_versions = input
-        .versions
-        .iter()
-        .map(|(from, (to, rules))| (from.value(), to.value(), rules.to_owned()))
-        .collect::<Vec<_>>();
-    let versions = impl_versions
-        .iter()
-        .map(|(from, to, convert_rules)| {
-            Ok(generate_impl_from(
-                input
-                    .struct_data
-                    .fields
-                    .iter()
-                    .map(|field| match field {
-                        syn::Field {
-                            ident: Some(ident),
-                            ty,
-                            ..
-                        } => Ok((ident.clone(), ty.clone())),
-                        _ => Err(anyhow!("Failed to get field ident")),
-                    })
-                    .collect::<Vec<Result<_>>>()
-                    .into_iter()
-                    .collect::<Result<Vec<_>>>()?,
-                generate_ident(input.struct_data.ident.clone(), from)?,
-                generate_ident(input.struct_data.ident.clone(), to)?,
-                convert_rules.changes.clone(),
-            )?)
-        })
-        .collect::<Vec<Result<_>>>()
-        .into_iter()
-        .collect::<Result<Vec<_>>>()
-        .expect("Failed to generate impl from");
+    let impl_versions = generate_impl_froms(
+        input.struct_data.ident.clone(),
+        attr.version.clone(),
+        input
+            .struct_data
+            .fields
+            .iter()
+            .map(|field| match field {
+                syn::Field {
+                    ident: Some(ident),
+                    ty,
+                    ..
+                } => Ok((ident.clone(), ty.clone())),
+                _ => Err(anyhow!("Failed to get field ident")),
+            })
+            .collect::<Vec<Result<_>>>()
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .expect("Failed to get field ident")
+            .into_iter()
+            .collect::<HashMap<_, _>>(),
+        input
+            .versions
+            .iter()
+            .map(|(_, (_, item))| item.clone())
+            .collect(),
+    )
+    .expect("Failed to generate impl froms");
 
     quote! {
         #current_version_struct
         #old_version_structs
-
-        #(#versions)*
+        #impl_versions
     }
     .into()
 }

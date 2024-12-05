@@ -6,8 +6,7 @@ use syn::{Ident, Type};
 
 use crate::{tools::MigrationField, utils::generate_ident};
 
-// Do the opposite operation and roll back to the old version
-fn generate_older_version_struct(
+pub(crate) fn generate_older_version_struct(
     old_struct_fields: HashMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
 ) -> Result<HashMap<Ident, Type>> {
@@ -61,7 +60,6 @@ pub(crate) fn generate_old_version_structs(
         .iter()
         .map(|(version, fields)| {
             let struct_name = generate_ident(&ident, version)?;
-            let struct_name = Ident::new(&struct_name, ident.span());
             let fields = fields.iter().map(|(ident, ty)| {
                 quote! {
                     #ident: #ty,
@@ -70,6 +68,7 @@ pub(crate) fn generate_old_version_structs(
 
             Ok(quote! {
                 #[doc(hidden)]
+                #[allow(non_camel_case_types)]
                 #(#extra_macros)*
                 pub struct #struct_name {
                     #(#fields)*
