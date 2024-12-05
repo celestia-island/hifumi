@@ -2,26 +2,26 @@ use proc_macro2::TokenStream;
 use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream},
-    token, Ident, Path, Token,
+    token, Ident, Token, TypePath,
 };
 
 #[derive(Debug, Clone)]
 pub enum MigrationField {
     AddField {
-        value: (Ident, Path),
+        value: (Ident, TypePath),
         converter: Option<TokenStream>,
     },
     RemoveField {
-        value: (Ident, Path),
+        value: (Ident, TypePath),
     },
     RenameField {
-        source: Vec<(Ident, Path)>,
-        target: (Ident, Path),
+        source: Vec<(Ident, TypePath)>,
+        target: (Ident, TypePath),
         converter: Option<TokenStream>,
     },
     CopyField {
-        source: Vec<(Ident, Path)>,
-        target: (Ident, Path),
+        source: Vec<(Ident, TypePath)>,
+        target: (Ident, TypePath),
         converter: Option<TokenStream>,
     },
 }
@@ -40,7 +40,7 @@ impl Parse for MigrationField {
                 while !content.is_empty() {
                     let key = content.parse::<Ident>()?;
                     content.parse::<Token![:]>()?;
-                    let ty = content.parse::<Path>()?;
+                    let ty = content.parse::<TypePath>()?;
 
                     source.push((key, ty));
 
@@ -53,7 +53,7 @@ impl Parse for MigrationField {
 
                 let target_ident = input.parse::<Ident>()?;
                 input.parse::<Token![:]>()?;
-                let ty = input.parse::<Path>()?;
+                let ty = input.parse::<TypePath>()?;
 
                 let content;
                 braced!(content in input);
@@ -68,14 +68,14 @@ impl Parse for MigrationField {
                 let source_ident = input.parse::<Ident>()?;
                 if input.peek(Token![:]) {
                     input.parse::<Token![:]>()?;
-                    let source_ty = input.parse::<Path>()?;
+                    let source_ty = input.parse::<TypePath>()?;
 
                     if input.peek(Token![=>]) {
                         input.parse::<Token![=>]>()?;
 
                         let target_ident = input.parse::<Ident>()?;
                         input.parse::<Token![:]>()?;
-                        let target_ty = input.parse::<Path>()?;
+                        let target_ty = input.parse::<TypePath>()?;
 
                         if input.peek(token::Brace) {
                             // + a: ty => b: ty { ... },
@@ -119,7 +119,7 @@ impl Parse for MigrationField {
                     input.parse::<Token![=>]>()?;
                     let target_ident = input.parse::<Ident>()?;
                     input.parse::<Token![:]>()?;
-                    let ty = input.parse::<Path>()?;
+                    let ty = input.parse::<TypePath>()?;
 
                     if input.peek(token::Brace) {
                         // + a => b: ty { ... },
@@ -148,7 +148,7 @@ impl Parse for MigrationField {
             // - a: ty,
             let key = input.parse::<Ident>()?;
             input.parse::<Token![:]>()?;
-            let ty = input.parse::<Path>()?;
+            let ty = input.parse::<TypePath>()?;
 
             Ok(Self::RemoveField { value: (key, ty) })
         } else {
@@ -161,7 +161,7 @@ impl Parse for MigrationField {
                 while !content.is_empty() {
                     let key = content.parse::<Ident>()?;
                     content.parse::<Token![:]>()?;
-                    let ty = content.parse::<Path>()?;
+                    let ty = content.parse::<TypePath>()?;
 
                     source.push((key, ty));
 
@@ -174,7 +174,7 @@ impl Parse for MigrationField {
 
                 let target_ident = input.parse::<Ident>()?;
                 input.parse::<Token![:]>()?;
-                let target_ty = input.parse::<Path>()?;
+                let target_ty = input.parse::<TypePath>()?;
 
                 let content;
                 braced!(content in input);
@@ -190,14 +190,14 @@ impl Parse for MigrationField {
 
                 if input.peek(Token![:]) {
                     input.parse::<Token![:]>()?;
-                    let source_ty = input.parse::<Path>()?;
+                    let source_ty = input.parse::<TypePath>()?;
 
                     input.parse::<Token![=>]>()?;
 
                     let target_key = input.parse::<Ident>()?;
                     if input.peek(Token![:]) {
                         input.parse::<Token![:]>()?;
-                        let target_ty = input.parse::<Path>()?;
+                        let target_ty = input.parse::<TypePath>()?;
 
                         if input.peek(token::Brace) {
                             // a: ty => b: ty { ... },
@@ -243,7 +243,7 @@ impl Parse for MigrationField {
                     input.parse::<Token![=>]>()?;
                     let target_key = input.parse::<Ident>()?;
                     input.parse::<Token![:]>()?;
-                    let ty = input.parse::<Path>()?;
+                    let ty = input.parse::<TypePath>()?;
 
                     if input.peek(token::Brace) {
                         // a => b: ty { ... },
