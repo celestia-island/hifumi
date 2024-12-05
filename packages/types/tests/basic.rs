@@ -175,8 +175,8 @@ fn decl_multiple_old_versions() {
     #[version("0.3")]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.2" => "0.3" {
-            + c: i32
-        })]
+        + c: i32
+    })]
     #[migration("0.1" => "0.2")]
     struct Test {
         a: i32,

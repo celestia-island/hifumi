@@ -19,7 +19,7 @@ pub(crate) fn generate_impl_from(
             (
                 key.clone(),
                 quote! {
-                    #key: old.#key,
+                    #key: old.#key
                 },
             )
         })
@@ -33,7 +33,7 @@ pub(crate) fn generate_impl_from(
                         struct_fields.insert(
                             key.clone(),
                             quote! {
-                                #key: #ty::from({ #converter }),
+                                #key: #ty::from({ #converter })
                             },
                         );
                     }
@@ -41,7 +41,7 @@ pub(crate) fn generate_impl_from(
                         struct_fields.insert(
                             key.clone(),
                             quote! {
-                                #key: #ty::default(),
+                                #key: #ty::default()
                             },
                         );
                     }
@@ -71,7 +71,7 @@ pub(crate) fn generate_impl_from(
                         struct_fields.insert(
                             target_ident.clone(),
                             quote! {
-                                #target_ident: #target_ty::from((|#source_params| { #converter })(#source_args)),
+                                #target_ident: #target_ty::from((|#source_params| { #converter })(#source_args))
                             },
                         );
                     }
@@ -85,7 +85,7 @@ pub(crate) fn generate_impl_from(
                         struct_fields.insert(
                             target_ident.clone(),
                             quote! {
-                                #target_ident: #target_ty::from(old.#source_ident.clone()),
+                                #target_ident: #target_ty::from(old.#source_ident.clone())
                             },
                         );
                     }
@@ -119,7 +119,7 @@ pub(crate) fn generate_impl_from(
                         struct_fields.insert(
                             target_ident.clone(),
                             quote! {
-                                #target_ident: #target_ty::from((|#source_params| { #converter })(#source_args)),
+                                #target_ident: #target_ty::from((|#source_params| { #converter })(#source_args))
                             },
                         );
                     }
@@ -137,7 +137,9 @@ pub(crate) fn generate_impl_from(
     Ok(quote! {
         impl From<#from_ident> for #to_ident {
             fn from(old: #from_ident) -> Self {
-                #(#struct_fields),*
+                Self {
+                    #(#struct_fields),*
+                }
             }
         }
     })
