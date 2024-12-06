@@ -1,5 +1,5 @@
-use anyhow::{anyhow, ensure, Result};
-use proc_macro2::{Span, TokenStream};
+use anyhow::{anyhow, Result};
+use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
 use syn::{Ident, Type};
@@ -64,18 +64,23 @@ fn generate_older_version_impl(
                             .iter()
                             .map(|(key, ty)| quote! { #key: #ty })
                             .collect::<Vec<_>>();
-                        let params = quote! { |#(#params),*| };
-
+                        let converter = quote! {
+                            fn _converter(#(#params),*) -> #target_ty {
+                                #converter
+                            }
+                        };
                         let args = source
                             .iter()
-                            .map(|(key, _)| quote! { __old.#key })
+                            .map(|(key, _)| quote! { __old.#key.clone() })
                             .collect::<Vec<_>>();
-                        let args = quote! { #(#args),* };
 
                         struct_fields.insert(
                             target_ident.clone(),
                             quote! {
-                                #target_ident: #target_ty::from((#params { #converter })(#args))
+                                #target_ident: {
+                                    #converter
+                                    _converter(#(#args),*)
+                                }
                             },
                         );
                     }
@@ -127,18 +132,23 @@ fn generate_older_version_impl(
                             .iter()
                             .map(|(key, ty)| quote! { #key: #ty })
                             .collect::<Vec<_>>();
-                        let params = quote! { |#(#params),*| };
-
+                        let converter = quote! {
+                            fn _converter(#(#params),*) -> #target_ty {
+                                #converter
+                            }
+                        };
                         let args = source
                             .iter()
                             .map(|(key, _)| quote! { __old.#key.clone() })
                             .collect::<Vec<_>>();
-                        let args = quote! { #(#args),* };
 
                         struct_fields.insert(
                             target_ident.clone(),
                             quote! {
-                                #target_ident: #target_ty::from((#params { #converter })(#args))
+                                #target_ident: {
+                                    #converter
+                                    _converter(#(#args),*)
+                                }
                             },
                         );
                     }
