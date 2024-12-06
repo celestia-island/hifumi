@@ -9,7 +9,7 @@ use crate::{
     utils::generate_ident,
 };
 
-use super::old_version_structs::generate_older_version_struct;
+use super::old_version_structs::infer_older_version_struct;
 
 fn generate_older_version_impl(
     old_struct_fields: HashMap<Ident, Type>,
@@ -115,6 +115,10 @@ fn generate_older_version_impl(
                 target,
                 converter,
             } => {
+                for (ident, _) in source.iter() {
+                    struct_fields.remove(&ident);
+                }
+
                 let (target_ident, target_ty) = target;
 
                 match converter {
@@ -182,7 +186,7 @@ pub(crate) fn generate_impl_froms(
     while let Some(item) = versions.iter().find(|item| item.to.value() == temp_version) {
         temp_version = item.from.value();
         temp_struct_fields =
-            generate_older_version_struct(temp_struct_fields.clone(), item.changes.clone())?;
+            infer_older_version_struct(temp_struct_fields.clone(), item.changes.clone())?;
 
         let from_ident = generate_ident(&ident, item.from.value())?;
         let to_ident = generate_ident(&ident, item.to.value())?;

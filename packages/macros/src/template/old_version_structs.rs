@@ -6,11 +6,12 @@ use syn::{Ident, Type};
 
 use crate::{tools::MigrationField, utils::generate_ident};
 
-pub(crate) fn generate_older_version_struct(
-    old_struct_fields: HashMap<Ident, Type>,
+pub(crate) fn infer_older_version_struct(
+    newer_struct_fields: HashMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
 ) -> Result<HashMap<Ident, Type>> {
-    let mut struct_fields = old_struct_fields.to_owned();
+    dbg!(&newer_struct_fields, &convert_rules);
+    let mut struct_fields = newer_struct_fields.to_owned();
 
     for rule in convert_rules.iter() {
         match rule {
@@ -52,7 +53,7 @@ pub(crate) fn generate_old_version_structs(
 
     for (version, convert_rules) in versions.iter() {
         temp_struct_fields =
-            generate_older_version_struct(temp_struct_fields.clone(), convert_rules.to_owned())?;
+            infer_older_version_struct(temp_struct_fields.clone(), convert_rules.to_owned())?;
         old_version_structs.push((version.clone(), temp_struct_fields.clone()));
     }
 

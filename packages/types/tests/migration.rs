@@ -37,7 +37,7 @@ fn rename_field() {
     struct Test {
         a: i32,
         b: i32,
-        c: i32,
+        d: i32,
     }
 }
 
@@ -52,6 +52,7 @@ fn copy_field() {
         a: i32,
         b: i32,
         c: i32,
+        d: i32,
     }
 }
 
@@ -65,6 +66,7 @@ fn add_field_with_default_value() {
     struct Test {
         a: i32,
         b: i32,
+        c: i32,
     }
 }
 
@@ -78,7 +80,7 @@ fn rename_field_with_default_value() {
     struct Test {
         a: i32,
         b: i32,
-        c: i32,
+        d: i32,
     }
 }
 
@@ -106,7 +108,7 @@ fn change_field_type_and_name() {
     struct Test {
         a: i32,
         b: i32,
-        c: String,
+        d: String,
     }
 }
 
@@ -116,7 +118,7 @@ fn change_field_type_and_name_with_multiple_target() {
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2" {
         c: i32 => e: String { c.to_string() },
-        c: i32 => f: f32 { c.into() },
+        c: i32 => f: f32 { c as f32 },
     })]
     struct Test {
         a: i32,
