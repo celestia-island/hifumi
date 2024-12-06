@@ -194,8 +194,8 @@ impl Parse for MigrationField {
 
                     input.parse::<Token![=>]>()?;
 
-                    let target_key = input.parse::<Ident>()?;
-                    if input.peek(Token![:]) {
+                    if input.peek2(Token![:]) {
+                        let target_key = input.parse::<Ident>()?;
                         input.parse::<Token![:]>()?;
                         let target_ty = input.parse::<TypePath>()?;
 
@@ -219,6 +219,7 @@ impl Parse for MigrationField {
                             })
                         }
                     } else {
+                        let target_ty = input.parse::<TypePath>()?;
                         if input.peek(token::Brace) {
                             // a: ty => ty { ... },
                             let content;
@@ -227,14 +228,14 @@ impl Parse for MigrationField {
 
                             Ok(Self::RenameField {
                                 source: vec![(source_key.clone(), source_ty.clone())],
-                                target: (source_key, source_ty),
+                                target: (source_key, target_ty),
                                 converter: Some(converter),
                             })
                         } else {
                             // a: ty => ty,
                             Ok(Self::RenameField {
                                 source: vec![(source_key.clone(), source_ty.clone())],
-                                target: (source_key, source_ty),
+                                target: (source_key, target_ty),
                                 converter: None,
                             })
                         }
