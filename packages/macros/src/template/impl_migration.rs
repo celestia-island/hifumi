@@ -201,7 +201,11 @@ pub(crate) fn generate_impl_froms(
             infer_older_version_struct(temp_struct_fields.clone(), item.changes.clone())?;
 
         let from_ident = generate_ident(&ident, item.from.value())?;
-        let to_ident = generate_ident(&ident, item.to.value())?;
+        let to_ident = if item.to.value() == final_version {
+            ident.clone()
+        } else {
+            generate_ident(&ident, item.to.value())?
+        };
 
         let temp_struct_impl =
             generate_older_version_impl(temp_struct_fields.clone(), item.changes.clone())?;

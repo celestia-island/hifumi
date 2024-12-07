@@ -1,7 +1,7 @@
 use syn::{
     braced,
     parse::{Parse, ParseStream},
-    token, Ident, LitStr, Token,
+    token, LitStr, Token,
 };
 
 use super::MigrationField;
