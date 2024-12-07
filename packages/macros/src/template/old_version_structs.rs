@@ -61,6 +61,37 @@ pub(crate) fn generate_old_version_structs(
         old_version_structs.push((version.clone(), temp_struct_fields.clone()));
     }
 
+    let old_version_structs_enum = old_version_structs
+        .clone()
+        .iter()
+        .map(|(version, _)| {
+            Ok((
+                generate_ident("", version)?,
+                generate_ident(&ident, version)?,
+            ))
+        })
+        .collect::<Vec<Result<_>>>()
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    let old_version_structs_enum = old_version_structs_enum
+        .iter()
+        .map(|(enum_name, enum_ty)| {
+            quote! {
+                #enum_name(#enum_ty),
+            }
+        })
+        .collect::<Vec<TokenStream>>();
+    let old_version_structs_enum_name = generate_ident(&ident, "$outer")?;
+    let old_version_structs_enum = quote! {
+        #[doc(hidden)]
+        #[allow(non_camel_case_types, unused_variables, dead_code)]
+        #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
+        #[serde(tag = "$version")]
+        pub enum #old_version_structs_enum_name {
+            #(#old_version_structs_enum)*
+        }
+    };
+
     let old_version_structs = old_version_structs
         .iter()
         .map(|(version, fields)| {
@@ -86,5 +117,7 @@ pub(crate) fn generate_old_version_structs(
 
     Ok(quote! {
         #(#old_version_structs)*
+
+        #old_version_structs_enum
     })
 }

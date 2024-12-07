@@ -21,7 +21,7 @@ fn generate_older_version_impl(
             (
                 key.clone(),
                 quote! {
-                    #key: __old.#key
+                    #key: __old.#key.to_owned()
                 },
             )
         })
@@ -65,6 +65,7 @@ fn generate_older_version_impl(
                             .map(|(key, ty)| quote! { #key: #ty })
                             .collect::<Vec<_>>();
                         let converter = quote! {
+                            #[allow(unused_variables)]
                             fn _converter(#(#params),*) -> #target_ty {
                                 #converter
                             }
@@ -133,6 +134,7 @@ fn generate_older_version_impl(
                             .map(|(key, ty)| quote! { #key: #ty })
                             .collect::<Vec<_>>();
                         let converter = quote! {
+                            #[allow(unused_variables)]
                             fn _converter(#(#params),*) -> #target_ty {
                                 #converter
                             }

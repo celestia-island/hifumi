@@ -3,7 +3,7 @@ use hifumi::version;
 #[test]
 fn add_field() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         + c: i32
     })]
@@ -17,7 +17,7 @@ fn add_field() {
 #[test]
 fn remove_field() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         - c: i32
     })]
@@ -30,7 +30,7 @@ fn remove_field() {
 #[test]
 fn rename_field() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         c => d: i32
     })]
@@ -44,7 +44,7 @@ fn rename_field() {
 #[test]
 fn copy_field() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         + c => d: i32
     })]
@@ -59,7 +59,7 @@ fn copy_field() {
 #[test]
 fn add_field_with_default_value() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         + c: i32 { 42 }
     })]
@@ -73,7 +73,7 @@ fn add_field_with_default_value() {
 #[test]
 fn rename_field_with_default_value() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         c => d: i32 { 42 }
     })]
@@ -87,7 +87,7 @@ fn rename_field_with_default_value() {
 #[test]
 fn change_field_type() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         c: i32 => String { c.to_string() }
     })]
@@ -101,7 +101,7 @@ fn change_field_type() {
 #[test]
 fn change_field_type_and_name() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         c: i32 => d: String { c.to_string() }
     })]
@@ -115,7 +115,7 @@ fn change_field_type_and_name() {
 #[test]
 fn change_field_type_and_name_with_multiple_target() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         c: i32 => e: String { c.to_string() },
         c: i32 => f: f32 { c as f32 },
@@ -131,7 +131,7 @@ fn change_field_type_and_name_with_multiple_target() {
 #[test]
 fn change_field_type_and_name_with_multiple_source() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         (c: i32, d: i32) => e: String { (c + d).to_string() },
     })]
@@ -146,7 +146,7 @@ fn change_field_type_and_name_with_multiple_source() {
 #[test]
 fn copy_field_with_multiple_target() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         + c => e: String,
         + d => f: f32,
@@ -164,7 +164,7 @@ fn copy_field_with_multiple_target() {
 #[test]
 fn copy_field_with_multiple_source() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         + (c: i32, d: i32) => e: String { (c + d).to_string() },
     })]
@@ -181,7 +181,7 @@ fn copy_field_with_multiple_source() {
 #[test]
 fn remove_field_with_multiple_source() {
     #[version("0.2")]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
     #[migration("0.1" => "0.2" {
         (c: i32, d: i32) => e: String { (c + d).to_string() },
     })]
