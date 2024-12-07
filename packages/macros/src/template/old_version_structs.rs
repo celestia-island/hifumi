@@ -1,8 +1,8 @@
 use anyhow::Result;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
-use syn::{Ident, Type};
+use syn::{Ident, LitStr, Type};
 
 use crate::{tools::MigrationField, utils::generate_ident};
 
@@ -10,7 +10,6 @@ pub(crate) fn infer_older_version_struct(
     newer_struct_fields: HashMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
 ) -> Result<HashMap<Ident, Type>> {
-    dbg!(&newer_struct_fields, &convert_rules);
     let mut struct_fields = newer_struct_fields.to_owned();
 
     for rule in convert_rules.iter() {
@@ -67,6 +66,7 @@ pub(crate) fn generate_old_version_structs(
         .map(|(version, _)| {
             Ok((
                 generate_ident("", version)?,
+                LitStr::new(version, Span::call_site()),
                 generate_ident(&ident, version)?,
             ))
         })
@@ -75,8 +75,9 @@ pub(crate) fn generate_old_version_structs(
         .collect::<Result<Vec<_>>>()?;
     let old_version_structs_enum = old_version_structs_enum
         .iter()
-        .map(|(enum_name, enum_ty)| {
+        .map(|(enum_name, enum_rename_litstr, enum_ty)| {
             quote! {
+                #[serde(rename = #enum_rename_litstr)]
                 #enum_name(#enum_ty),
             }
         })
@@ -106,6 +107,7 @@ pub(crate) fn generate_old_version_structs(
                 #[doc(hidden)]
                 #[allow(non_camel_case_types, unused_variables, dead_code)]
                 #(#extra_macros)*
+                #[derive(::serde::Serialize, ::serde::Deserialize)]
                 pub struct #struct_name {
                     #(#fields)*
                 }
