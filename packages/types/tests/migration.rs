@@ -154,6 +154,8 @@ fn copy_field_with_multiple_target() {
     struct Test {
         a: i32,
         b: i32,
+        c: String,
+        d: f32,
         e: String,
         f: f32,
     }
@@ -169,6 +171,8 @@ fn copy_field_with_multiple_source() {
     struct Test {
         a: i32,
         b: i32,
+        c: i32,
+        d: i32,
         e: String,
         f: f32,
     }
