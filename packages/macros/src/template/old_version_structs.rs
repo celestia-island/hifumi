@@ -19,21 +19,25 @@ pub(crate) fn infer_older_version_struct(
                 let (key, _) = value;
                 struct_fields.remove(&key);
             }
-            MigrationField::CopyField { target, .. } => {
+            MigrationField::CopyField { source, target, .. } => {
                 let (target_ident, _) = target;
                 struct_fields.remove(&target_ident);
+
+                for (ident, ty) in source.iter() {
+                    struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
+                }
             }
             MigrationField::RemoveField { value } => {
                 let (ident, ty) = value;
                 struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
             }
             MigrationField::RenameField { source, target, .. } => {
+                let (target_ident, _) = target;
+                struct_fields.remove(&target_ident);
+
                 for (ident, ty) in source.iter() {
                     struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
                 }
-
-                let (target_ident, _) = target;
-                struct_fields.remove(&target_ident);
             }
         }
     }
