@@ -20,7 +20,7 @@ pub(crate) fn generate_current_version_struct(
     ident: Ident,
     final_version: String,
     final_struct_fields: HashMap<Ident, Type>,
-    versions: Vec<(String, Vec<MigrationField>)>,
+    versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
     let Migration {
         extra_macros,
@@ -33,10 +33,9 @@ pub(crate) fn generate_current_version_struct(
     let old_version_structs_enum = old_version_structs
         .clone()
         .iter()
-        .filter(|(version, _)| version != &final_version)
         .map(|(version, _)| {
             Ok((
-                generate_ident("", version)?,
+                generate_ident(&ident, version)?,
                 LitStr::new(version, Span::call_site()),
                 generate_ident(&ident, version)?,
             ))
@@ -61,9 +60,6 @@ pub(crate) fn generate_current_version_struct(
         #[serde(tag = "$version")]  // TODO: Read from attribute
         pub enum #old_version_structs_enum_name {
             #(#old_version_structs_enum)*
-
-            #[serde(rename = #final_version)]
-            #ident(#ident),
         }
     };
 
@@ -75,13 +71,16 @@ pub(crate) fn generate_current_version_struct(
 
     // Generate serialize implementation
 
+    let impl_serialize_final_version_ident = generate_ident(&ident, &final_version)?;
     let impl_serialize = quote! {
         impl ::serde::Serialize for #ident {
             fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
             where
                 S: ::serde::Serializer,
             {
-                #old_version_structs_enum_name::#ident(self.to_owned()).serialize(serializer)
+                #old_version_structs_enum_name::#impl_serialize_final_version_ident(
+                    #impl_serialize_final_version_ident::from(self.to_owned())
+                ).serialize(serializer)
             }
         }
     };
@@ -89,9 +88,8 @@ pub(crate) fn generate_current_version_struct(
     // Generate deserialize implementation
     let impl_deserialize_match_list = old_version_structs
         .iter()
-        .filter(|(version, _)| version != &final_version)
         .map(|(version, _)| {
-            let struct_name = generate_ident("", version)?;
+            let struct_name = generate_ident(&ident, version)?;
             Ok(quote! {
                 #old_version_structs_enum_name::#struct_name(val) => Ok(val.into())
             })
@@ -108,7 +106,6 @@ pub(crate) fn generate_current_version_struct(
                 let value = #old_version_structs_enum_name::deserialize(deserializer)?;
                 match value {
                     #( #impl_deserialize_match_list, )*
-                    #old_version_structs_enum_name::#ident(val) => Ok(val),
                 }
             }
         }
