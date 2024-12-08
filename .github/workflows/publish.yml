@@ -24,4 +24,5 @@ jobs:
             --allow-branch HEAD \
             --no-confirm \
             --no-verify \
-            --execute
+            --execute \
+            -p hifumi-macros hifumi
