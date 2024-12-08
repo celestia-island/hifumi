@@ -1,15 +1,15 @@
 use anyhow::Result;
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use syn::{Ident, Type};
 
 use crate::{tools::MigrationField, utils::generate_ident};
 
 pub(crate) fn infer_older_version_struct(
-    newer_struct_fields: HashMap<Ident, Type>,
+    newer_struct_fields: BTreeMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
-) -> Result<HashMap<Ident, Type>> {
+) -> Result<BTreeMap<Ident, Type>> {
     let mut struct_fields = newer_struct_fields.clone();
 
     for rule in convert_rules.iter() {
@@ -46,9 +46,9 @@ pub(crate) fn infer_older_version_struct(
 
 pub(crate) fn generate_old_versions(
     final_version: String,
-    final_struct_fields: HashMap<Ident, Type>,
+    final_struct_fields: BTreeMap<Ident, Type>,
     versions: Vec<(String, Vec<MigrationField>, String)>,
-) -> Result<Vec<(String, HashMap<Ident, Type>)>> {
+) -> Result<Vec<(String, BTreeMap<Ident, Type>)>> {
     let mut temp_struct_fields = final_struct_fields.to_owned();
     let mut old_version_structs = vec![(final_version, temp_struct_fields.clone())];
 
@@ -64,7 +64,7 @@ pub(crate) fn generate_old_versions(
 pub(crate) fn generate_old_version_structs(
     ident: Ident,
     final_version: String,
-    final_struct_fields: HashMap<Ident, Type>,
+    final_struct_fields: BTreeMap<Ident, Type>,
     extra_macros: Vec<TokenStream>,
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {

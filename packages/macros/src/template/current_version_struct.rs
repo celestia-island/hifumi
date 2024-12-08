@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use proc_macro2::{Span, TokenStream};
@@ -19,7 +19,7 @@ pub(crate) fn generate_current_version_struct(
     input: Migration,
     ident: Ident,
     final_version: String,
-    final_struct_fields: HashMap<Ident, Type>,
+    final_struct_fields: BTreeMap<Ident, Type>,
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
     let Migration {
