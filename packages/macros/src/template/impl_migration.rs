@@ -209,7 +209,7 @@ pub(crate) fn generate_impl_froms(
 
         let temp_struct_impl =
             generate_older_version_impl(temp_struct_fields.clone(), item.changes.clone())?;
-        let temp_struct_impl = temp_struct_impl
+        let temp_struct_impl_nearly = temp_struct_impl
             .iter()
             .map(|(_, value)| value)
             .collect::<Vec<_>>();
@@ -218,11 +218,21 @@ pub(crate) fn generate_impl_froms(
             impl From<#from_ident> for #to_ident {
                 fn from(__old: #from_ident) -> Self {
                     Self {
-                        #(#temp_struct_impl),*
+                        #(#temp_struct_impl_nearly),*
                     }
                 }
             }
         });
+
+        if item.to.value() != final_version {
+            impl_froms.push(quote! {
+                impl From<#from_ident> for #ident {
+                    fn from(__old: #from_ident) -> Self {
+                        #to_ident::from(__old).into()
+                    }
+                }
+            });
+        }
     }
 
     Ok(quote! {
