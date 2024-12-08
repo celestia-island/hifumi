@@ -15,7 +15,7 @@ pub fn generate_ident(prefix: impl ToString, id: impl ToString) -> Result<Ident>
     )?;
 
     Ok(Ident::new(
-        &format!("_{}_{}", prefix.to_string(), id.to_string()),
+        &format!("_{}_{}", prefix.to_string(), id),
         Span::call_site(),
     ))
 }

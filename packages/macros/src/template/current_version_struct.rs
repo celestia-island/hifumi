@@ -15,7 +15,7 @@ use self::old_version_structs::generate_old_versions;
 use super::old_version_structs;
 
 pub(crate) fn generate_current_version_struct(
-    attr: DeriveVersion,
+    _attr: DeriveVersion,
     input: Migration,
     ident: Ident,
     final_version: String,
