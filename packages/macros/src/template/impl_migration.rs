@@ -235,6 +235,35 @@ pub(crate) fn generate_impl_froms(
         }
     }
 
+    let final_ident = generate_ident(&ident, &final_version)?;
+    let final_fields = final_struct_fields
+        .iter()
+        .map(|(ident, _)| {
+            quote! {
+                #ident: __old.#ident.to_owned()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    impl_froms.push(quote! {
+        impl From<#final_ident> for #ident {
+            fn from(__old: #final_ident) -> Self {
+                Self {
+                    #(#final_fields),*
+                }
+            }
+        }
+    });
+    impl_froms.push(quote! {
+        impl From<#ident> for #final_ident {
+            fn from(__old: #ident) -> Self {
+                Self {
+                    #(#final_fields),*
+                }
+            }
+        }
+    });
+
     Ok(quote! {
         #(#impl_froms)*
     })
