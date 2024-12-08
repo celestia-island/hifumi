@@ -10,7 +10,7 @@ pub(crate) fn infer_older_version_struct(
     newer_struct_fields: HashMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
 ) -> Result<HashMap<Ident, Type>> {
-    let mut struct_fields = newer_struct_fields.to_owned();
+    let mut struct_fields = newer_struct_fields.clone();
 
     for rule in convert_rules.iter() {
         match rule {

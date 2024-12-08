@@ -36,15 +36,20 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         .expect("Failed to get field ident")
         .into_iter()
         .collect::<HashMap<_, _>>();
-    let versions = input
-        .versions
-        .clone()
-        .iter()
-        .map(|(from, (_, rules))| Ok((from.value(), rules.changes.clone())))
-        .collect::<Vec<Result<_>>>()
-        .into_iter()
-        .collect::<Result<Vec<_>>>()
-        .expect("Failed to get versions");
+    let versions = {
+        let mut temp_version = attr.version.clone();
+        let mut ret = vec![];
+
+        while let Some(item) = input
+            .versions
+            .iter()
+            .find(|item| item.to.value() == temp_version)
+        {
+            ret.push((item.from.value(), item.changes.clone()));
+            temp_version = item.from.value();
+        }
+        ret
+    };
 
     let old_version_structs = generate_old_version_structs(
         input.struct_data.ident.clone(),
@@ -68,11 +73,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         input.struct_data.ident.clone(),
         attr.version.clone(),
         final_struct_fields.clone(),
-        input
-            .versions
-            .iter()
-            .map(|(_, (_, item))| item.clone())
-            .collect(),
+        input.versions.clone(),
     )
     .expect("Failed to generate impl froms");
 
