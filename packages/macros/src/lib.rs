@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use proc_macro::TokenStream;
 use quote::quote;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use syn::parse_macro_input;
 
 mod template;
@@ -35,7 +35,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         .collect::<Result<Vec<_>>>()
         .expect("Failed to get field ident")
         .into_iter()
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     let versions = {
         let mut temp_version = attr.version.clone();
         let mut ret = vec![];

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use syn::{Ident, Type};
 
 use crate::{
@@ -12,9 +12,9 @@ use crate::{
 use super::old_version_structs::infer_older_version_struct;
 
 fn generate_older_version_impl(
-    old_struct_fields: HashMap<Ident, Type>,
+    old_struct_fields: BTreeMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
-) -> Result<HashMap<Ident, TokenStream>> {
+) -> Result<BTreeMap<Ident, TokenStream>> {
     let mut struct_fields = old_struct_fields
         .keys()
         .map(|key| {
@@ -25,7 +25,7 @@ fn generate_older_version_impl(
                 },
             )
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
 
     for rule in convert_rules.iter() {
         match rule {
@@ -188,7 +188,7 @@ fn generate_older_version_impl(
 pub(crate) fn generate_impl_froms(
     ident: Ident,
     final_version: String,
-    final_struct_fields: HashMap<Ident, Type>,
+    final_struct_fields: BTreeMap<Ident, Type>,
     versions: Vec<MigrationComment>,
 ) -> Result<TokenStream> {
     let mut temp_struct_fields = final_struct_fields.to_owned();
