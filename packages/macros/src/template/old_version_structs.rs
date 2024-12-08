@@ -14,25 +14,25 @@ pub(crate) fn infer_older_version_struct(
 
     for rule in convert_rules.iter() {
         match rule {
-            MigrationField::AddField { value, .. } => {
+            MigrationField::Add { value, .. } => {
                 let (key, _) = value;
-                struct_fields.remove(&key);
+                struct_fields.remove(key);
             }
-            MigrationField::CopyField { source, target, .. } => {
+            MigrationField::Copy { source, target, .. } => {
                 let (target_ident, _) = target;
-                struct_fields.remove(&target_ident);
+                struct_fields.remove(target_ident);
 
                 for (ident, ty) in source.iter() {
                     struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
                 }
             }
-            MigrationField::RemoveField { value } => {
+            MigrationField::Remove { value } => {
                 let (ident, ty) = value;
                 struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
             }
-            MigrationField::RenameField { source, target, .. } => {
+            MigrationField::Rename { source, target, .. } => {
                 let (target_ident, _) = target;
-                struct_fields.remove(&target_ident);
+                struct_fields.remove(target_ident);
 
                 for (ident, ty) in source.iter() {
                     struct_fields.insert(ident.clone(), Type::Path(ty.clone()));

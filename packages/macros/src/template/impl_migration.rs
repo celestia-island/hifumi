@@ -16,8 +16,8 @@ fn generate_older_version_impl(
     convert_rules: Vec<MigrationField>,
 ) -> Result<HashMap<Ident, TokenStream>> {
     let mut struct_fields = old_struct_fields
-        .iter()
-        .map(|(key, _)| {
+        .keys()
+        .map(|key| {
             (
                 key.clone(),
                 quote! {
@@ -29,7 +29,7 @@ fn generate_older_version_impl(
 
     for rule in convert_rules.iter() {
         match rule {
-            MigrationField::AddField { value, converter } => {
+            MigrationField::Add { value, converter } => {
                 let (key, ty) = value;
 
                 match converter {
@@ -51,7 +51,7 @@ fn generate_older_version_impl(
                     }
                 }
             }
-            MigrationField::CopyField {
+            MigrationField::Copy {
                 source,
                 target,
                 converter,
@@ -112,17 +112,17 @@ fn generate_older_version_impl(
                     }
                 }
             }
-            MigrationField::RemoveField { value } => {
+            MigrationField::Remove { value } => {
                 let (ident, _) = value;
-                struct_fields.remove(&ident);
+                struct_fields.remove(ident);
             }
-            MigrationField::RenameField {
+            MigrationField::Rename {
                 source,
                 target,
                 converter,
             } => {
                 for (ident, _) in source.iter() {
-                    struct_fields.remove(&ident);
+                    struct_fields.remove(ident);
                 }
 
                 let (target_ident, target_ty) = target;
@@ -209,10 +209,7 @@ pub(crate) fn generate_impl_froms(
 
         let temp_struct_impl =
             generate_older_version_impl(temp_struct_fields.clone(), item.changes.clone())?;
-        let temp_struct_impl_nearly = temp_struct_impl
-            .iter()
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
+        let temp_struct_impl_nearly = temp_struct_impl.values();
 
         impl_froms.push(quote! {
             impl From<#from_ident> for #to_ident {
@@ -237,8 +234,8 @@ pub(crate) fn generate_impl_froms(
 
     let final_ident = generate_ident(&ident, &final_version)?;
     let final_fields = final_struct_fields
-        .iter()
-        .map(|(ident, _)| {
+        .keys()
+        .map(|ident| {
             quote! {
                 #ident: __old.#ident.to_owned()
             }

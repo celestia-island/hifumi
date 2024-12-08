@@ -26,7 +26,7 @@ impl Parse for Migration {
             bracketed!(content in input);
             let key = content.parse::<Ident>()?;
 
-            if key.to_string() == "migration" {
+            if key == "migration" {
                 let inner_content;
                 parenthesized!(inner_content in content);
                 let item = inner_content.parse::<MigrationComment>()?;
