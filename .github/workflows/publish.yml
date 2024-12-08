@@ -25,4 +25,4 @@ jobs:
             --no-confirm \
             --no-verify \
             --execute \
-            -p hifumi-macros hifumi
+            -p hifumi-macros -p hifumi
