@@ -36,8 +36,14 @@ fn decl_old_version() {
 
 #[test]
 fn decl_multiple_old_versions() {
-    #[version("0.3")]
+    #[version("0.5")]
     #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.4" => "0.5" {
+        + d: i32,
+    })]
+    #[migration("0.3" => "0.4" {
+        c: i32 => String { c.to_string() },
+    })]
     #[migration("0.2" => "0.3" {
         + c: i32
     })]
@@ -45,7 +51,8 @@ fn decl_multiple_old_versions() {
     struct Test {
         a: i32,
         b: i32,
-        c: i32,
+        c: String,
+        d: i32,
     }
 }
 
