@@ -1,7 +1,8 @@
+use anyhow::Result;
 use hifumi::version;
 
 #[test]
-fn decl_single_version() {
+fn decl_single_version() -> Result<()> {
     #[version("0.1")]
     #[derive(Debug, Clone, PartialEq)]
     struct Test {
@@ -9,6 +10,17 @@ fn decl_single_version() {
         b: i32,
         c: i32,
     }
+
+    assert_eq!(
+        r#"{"$version":"0.1","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"0.1","a":1,"b":2,"c":3}"#,
+    );
+
+    Ok(())
 }
 
 #[test]

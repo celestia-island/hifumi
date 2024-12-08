@@ -45,7 +45,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
             .iter()
             .find(|item| item.to.value() == temp_version)
         {
-            ret.push((item.from.value(), item.changes.clone()));
+            ret.push((item.from.value(), item.changes.clone(), item.to.value()));
             temp_version = item.from.value();
         }
         ret
