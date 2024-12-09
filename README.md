@@ -31,3 +31,10 @@ struct Test {
     e: String,
 }
 ```
+
+## TODO
+
+- [ ] Support `rs_ts`.
+- [ ] Support `yuuka`.
+- [ ] Version field can use crate version automatically.
+- [ ] Generate migration code automatically from the git history.
