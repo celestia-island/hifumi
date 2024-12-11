@@ -24,7 +24,7 @@ fn decl_single_version() -> Result<()> {
 }
 
 #[test]
-fn decl_single_version_with_suffix() {
+fn decl_single_version_with_suffix() -> Result<()> {
     #[version("1.0.0-rc12")]
     #[derive(Debug, Clone, PartialEq)]
     struct Test {
@@ -32,10 +32,21 @@ fn decl_single_version_with_suffix() {
         b: i32,
         c: i32,
     }
+
+    assert_eq!(
+        r#"{"$version":"1.0.0-rc12","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"1.0.0-rc12","a":1,"b":2,"c":3}"#,
+    );
+
+    Ok(())
 }
 
 #[test]
-fn decl_old_version() {
+fn decl_old_version() -> Result<()> {
     #[version("0.2")]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2")]
@@ -44,10 +55,17 @@ fn decl_old_version() {
         b: i32,
         c: i32,
     }
+
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.1","a":1,"b":2,"c":3}"#)?,
+        Test { a: 1, b: 2, c: 3 }
+    );
+
+    Ok(())
 }
 
 #[test]
-fn decl_multiple_old_versions() {
+fn decl_multiple_old_versions() -> Result<()> {
     #[version("0.5")]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.4" => "0.5" {
@@ -66,10 +84,58 @@ fn decl_multiple_old_versions() {
         c: String,
         d: i32,
     }
+
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.5","a":1,"b":2,"c":"3","d":4}"#)?,
+        Test {
+            a: 1,
+            b: 2,
+            c: "3".to_string(),
+            d: 4
+        }
+    );
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.4","a":1,"b":2,"c":"3"}"#)?,
+        Test {
+            a: 1,
+            b: 2,
+            c: "3".to_string(),
+            d: 0
+        }
+    );
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.3","a":1,"b":2,"c":3}"#)?,
+        Test {
+            a: 1,
+            b: 2,
+            c: "3".to_string(),
+            d: 0
+        }
+    );
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.2","a":1,"b":2}"#)?,
+        Test {
+            a: 1,
+            b: 2,
+            c: "0".to_string(),
+            d: 0
+        }
+    );
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.1","a":1,"b":2}"#)?,
+        Test {
+            a: 1,
+            b: 2,
+            c: "0".to_string(),
+            d: 0
+        }
+    );
+
+    Ok(())
 }
 
 #[test]
-fn decl_version_with_timestamp() {
+fn decl_version_with_timestamp() -> Result<()> {
     #[version("2025-1-1")]
     #[derive(Debug, Clone, PartialEq)]
     struct Test {
@@ -77,6 +143,15 @@ fn decl_version_with_timestamp() {
         b: i32,
         c: i32,
     }
+
+    assert_eq!(
+        r#"{"$version":"2025-1-1","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"2025-1-1","a":1,"b":2,"c":3}"#,
+    );
 
     #[version("2025-01-01")]
     #[derive(Debug, Clone, PartialEq)]
@@ -86,6 +161,15 @@ fn decl_version_with_timestamp() {
         c: i32,
     }
 
+    assert_eq!(
+        r#"{"$version":"2025-01-01","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test2 { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test2 { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"2025-01-01","a":1,"b":2,"c":3}"#,
+    );
+
     #[version("2025-1-1 9:34")]
     #[derive(Debug, Clone, PartialEq)]
     struct Test3 {
@@ -93,6 +177,15 @@ fn decl_version_with_timestamp() {
         b: i32,
         c: i32,
     }
+
+    assert_eq!(
+        r#"{"$version":"2025-1-1 9:34","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test3 { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test3 { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"2025-1-1 9:34","a":1,"b":2,"c":3}"#,
+    );
 
     #[version("2025-1-01 09:34:12")]
     #[derive(Debug, Clone, PartialEq)]
@@ -102,6 +195,15 @@ fn decl_version_with_timestamp() {
         c: i32,
     }
 
+    assert_eq!(
+        r#"{"$version":"2025-1-01 09:34:12","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test4 { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test4 { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"2025-1-01 09:34:12","a":1,"b":2,"c":3}"#,
+    );
+
     #[version("12345678")]
     #[derive(Debug, Clone, PartialEq)]
     struct Test5 {
@@ -109,4 +211,15 @@ fn decl_version_with_timestamp() {
         b: i32,
         c: i32,
     }
+
+    assert_eq!(
+        r#"{"$version":"12345678","a":1,"b":2,"c":3}"#,
+        serde_json::to_string(&Test5 { a: 1, b: 2, c: 3 })?
+    );
+    assert_eq!(
+        serde_json::to_string(&Test5 { a: 1, b: 2, c: 3 })?,
+        r#"{"$version":"12345678","a":1,"b":2,"c":3}"#,
+    );
+
+    Ok(())
 }
