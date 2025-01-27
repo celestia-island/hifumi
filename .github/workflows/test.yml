@@ -4,10 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/clippy.yml'
-      - 'yuuka/**/*'
-      - 'yuuka-macros/**/*'
+      - 'packages/**/*'
       - 'Cargo.toml'
-      - 'Cargo.lock'
   push:
     branches: [master]
 
