@@ -54,11 +54,10 @@ pub(crate) fn generate_current_version_struct(
         .collect::<Vec<TokenStream>>();
     let old_version_structs_enum_name = generate_ident(&ident, "#outer")?;
     let old_version_structs_enum = quote! {
-        #[doc(hidden)]
         #[allow(non_camel_case_types, unused_variables, dead_code)]
         #[derive(Debug, Clone, PartialEq, ::serde::Serialize, ::serde::Deserialize)]
         #[serde(tag = "$version")]  // TODO: Read from attribute
-        pub enum #old_version_structs_enum_name {
+        enum #old_version_structs_enum_name {
             #(#old_version_structs_enum)*
         }
     };
