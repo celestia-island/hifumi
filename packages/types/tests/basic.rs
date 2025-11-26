@@ -223,3 +223,23 @@ fn decl_version_with_timestamp() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn decl_version_auto() -> Result<()> {
+    // 使用无参数的 #[version] 宏，将自动使用 CARGO_PKG_VERSION
+    #[version]
+    #[derive(Debug, Clone, PartialEq)]
+    struct Test {
+        a: i32,
+        b: i32,
+        c: i32,
+    }
+
+    // 获取当前 crate 版本
+    let expected_version = env!("CARGO_PKG_VERSION");
+    let expected = format!(r#"{{"$version":"{}","a":1,"b":2,"c":3}}"#, expected_version);
+
+    assert_eq!(expected, serde_json::to_string(&Test { a: 1, b: 2, c: 3 })?);
+
+    Ok(())
+}

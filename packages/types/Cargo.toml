@@ -22,3 +22,4 @@ serde = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+specta = "1.0.5"
