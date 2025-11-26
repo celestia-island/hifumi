@@ -122,19 +122,34 @@ cargo test -p hifumi add_field
 - 添加 `specta` 依赖
 - 在 derive 列表中添加 `Type`
 
-### Support yuuka (需要设计)
+### Support yuuka (已完成 - serde 互操作层)
 
 [yuuka](https://github.com/celestia-island/yuuka) 使用完全不同的宏系统（过程宏 `derive_struct!` 而非属性宏），直接集成比较困难。
 
-**可能的方案**：
-1. **桥接宏**：创建一个新的宏，允许在 yuuka 的 `derive_struct!` 内部使用 hifumi 的版本化功能
-2. **代码生成**：提供一个工具从 hifumi 结构体生成 yuuka 兼容的代码
-3. **运行时兼容**：让两者生成的结构体在运行时兼容（通过 serde）
+**已实现方案：serde 互操作层**
 
-目前建议用户：
-- 使用 hifumi 进行版本化数据迁移
-- 单独使用 yuuka 进行配置管理
-- 两者通过 serde 序列化进行数据交换
+在 `packages/e2e/src/yuuka_interop.rs` 中提供了工具函数：
+
+```rust
+use hifumi_e2e::yuuka_interop::{yuuka_to_hifumi_with_version, hifumi_to_yuuka};
+
+// yuuka -> hifumi (需要指定版本号)
+let hifumi: HifumiConfig = yuuka_to_hifumi_with_version(&yuuka_cfg, "0.1")?;
+
+// hifumi -> yuuka (自动移除 $version 字段)
+let yuuka: YuukaConfig = hifumi_to_yuuka(&hifumi_cfg)?;
+```
+
+**E2E 测试覆盖**：
+- `packages/e2e/tests/yuuka_complex.rs` - 复杂场景测试
+  - 嵌套结构体转换
+  - 版本迁移（从 v1 到 v3）
+  - 数组字段
+  - 可选字段
+
+**注意事项**：
+- yuuka 会自动添加 `Debug` 和 `Clone` trait，不要重复 derive
+- hifumi 会在 JSON 中添加 `$version` 字段，转换时需要处理
 
 ### Version field auto-detection (已完成)
 
