@@ -32,9 +32,76 @@ struct Test {
 }
 ```
 
+## Features
+
+### Automatic Version Detection
+
+You can use `#[version]` without arguments to automatically use `CARGO_PKG_VERSION`:
+
+```rust
+use hifumi::version;
+
+#[version]  // Automatically uses CARGO_PKG_VERSION
+#[derive(Debug, Clone, PartialEq)]
+struct Config {
+    // ...
+}
+```
+
+### TypeScript Type Export (specta)
+
+Hifumi supports [specta](https://github.com/specta-rs/specta) for TypeScript type generation:
+
+```rust
+use hifumi::version;
+use specta::Type;
+
+#[version("0.1")]
+#[derive(Debug, Clone, PartialEq, Type)]  // Add Type derive
+struct User {
+    id: i32,
+    name: String,
+}
+
+// Export to TypeScript
+let ts = specta::ts::export::<User>(&Default::default())?;
+```
+
 ## TODO
 
-- [ ] Support `rs_ts`.
-- [ ] Support `yuuka`.
-- [ ] Version field can use crate version automatically.
-- [ ] Generate migration code automatically from the git history.
+- [x] Support `specta` for TypeScript type export.
+- [ ] Support `yuuka` (requires design for macro interop).
+- [x] Version field can use crate version automatically.
+- [x] Generate migration code automatically from the git history.
+
+## CLI Tool
+
+Install the CLI tool:
+
+```bash
+cargo install hifumi-cli
+```
+
+### Analyze struct changes
+
+```bash
+hifumi analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
+```
+
+### Generate migration code
+
+```bash
+hifumi generate -f src/models.rs -s MyStruct \
+  --from-version "0.1" --to-version "0.2" \
+  --from-commit HEAD~1 --to-commit HEAD
+```
+
+This will output migration code like:
+
+```rust
+#[migration("0.1" => "0.2" {
+    + new_field: String,
+    - old_field: i32,
+    renamed_from => renamed_to: bool,
+})]
+```
