@@ -70,9 +70,43 @@ let ts = specta::ts::export::<User>(&Default::default())?;
 ## TODO
 
 - [x] Support `specta` for TypeScript type export.
-- [ ] Support `yuuka` (requires design for macro interop).
+- [x] Support `yuuka` (via serde-based interop layer).
 - [x] Version field can use crate version automatically.
 - [x] Generate migration code automatically from the git history.
+
+## Yuuka Interoperability
+
+Hifumi provides a serde-based interop layer with [yuuka](https://github.com/celestia-island/yuuka). Since yuuka uses procedural macros (`derive_struct!`) while hifumi uses attribute macros (`#[version]`), deep integration is challenging. Instead, we provide utility functions for converting between the two formats:
+
+```rust
+use yuuka::derive_struct;
+use hifumi::version;
+use hifumi_e2e::yuuka_interop::{yuuka_to_hifumi_with_version, hifumi_to_yuuka};
+
+// Define a yuuka config structure
+derive_struct!(
+    #[derive(serde::Serialize, serde::Deserialize)]
+    pub YuukaConfig {
+        name: String,
+        value: i32,
+    }
+);
+
+// Define a versioned hifumi structure with the same fields
+#[version("0.1")]
+#[derive(Debug, Clone, PartialEq)]
+struct HifumiConfig {
+    name: String,
+    value: i32,
+}
+
+// Convert yuuka -> hifumi
+let yuuka_cfg = YuukaConfig { name: "test".into(), value: 42 };
+let hifumi_cfg: HifumiConfig = yuuka_to_hifumi_with_version(&yuuka_cfg, "0.1")?;
+
+// Convert hifumi -> yuuka
+let back: YuukaConfig = hifumi_to_yuuka(&hifumi_cfg)?;
+```
 
 ## CLI Tool
 
