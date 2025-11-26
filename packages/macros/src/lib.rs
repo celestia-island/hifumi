@@ -18,6 +18,8 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr: DeriveVersion = parse_macro_input!(attr);
     let input: Migration = parse_macro_input!(input);
 
+    let version_string = attr.get_version();
+
     let final_struct_fields = input
         .struct_data
         .fields
@@ -37,7 +39,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     let versions = {
-        let mut temp_version = attr.version.clone();
+        let mut temp_version = version_string.clone();
         let mut ret = vec![];
 
         while let Some(item) = input
@@ -53,7 +55,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
 
     let old_version_structs = generate_old_version_structs(
         input.struct_data.ident.clone(),
-        attr.version.clone(),
+        version_string.clone(),
         final_struct_fields.clone(),
         input
             .extra_macros
@@ -71,7 +73,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     // Confirm the order of the versions
     let impl_versions = generate_impl_froms(
         input.struct_data.ident.clone(),
-        attr.version.clone(),
+        version_string.clone(),
         final_struct_fields.clone(),
         input.versions.clone(),
     )
@@ -81,7 +83,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         attr.clone(),
         input.clone(),
         input.struct_data.ident.clone(),
-        attr.version.clone(),
+        version_string.clone(),
         final_struct_fields,
         versions,
     )
