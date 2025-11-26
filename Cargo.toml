@@ -1,5 +1,5 @@
 [workspace]
-members = ["packages/macros", "packages/types"]
+members = ["packages/macros", "packages/types", "packages/cli"]
 resolver = "2"
 
 [profile.release]

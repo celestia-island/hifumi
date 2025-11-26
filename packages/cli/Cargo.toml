@@ -1,0 +1,23 @@
+[package]
+name = "hifumi-cli"
+version.workspace = true
+edition.workspace = true
+
+publish = true
+description = "CLI tool for hifumi - generate migration code from git history"
+license = "Apache-2.0"
+repository = "https://github.com/celestia-island/hifumi"
+
+[[bin]]
+name = "hifumi"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { version = "^4", features = ["derive"] }
+git2 = "^0.19"
+syn = { version = "^2", features = ["full", "parsing", "extra-traits"] }
+quote = "^1"
+proc-macro2 = "^1"
+similar = "^2"
+colored = "^2"
