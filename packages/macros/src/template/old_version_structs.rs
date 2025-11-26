@@ -82,11 +82,10 @@ pub(crate) fn generate_old_version_structs(
             });
 
             Ok(quote! {
-                #[doc(hidden)]
                 #[allow(non_camel_case_types, unused_variables, dead_code)]
                 #(#extra_macros)*
                 #[derive(::serde::Serialize, ::serde::Deserialize)]
-                pub struct #struct_name {
+                struct #struct_name {
                     #(#fields)*
                 }
             })
