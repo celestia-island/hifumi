@@ -8,15 +8,9 @@ use syn::{Fields, Item, ItemStruct, Type};
 #[derive(Debug, Clone)]
 pub enum FieldChange {
     /// Field was added
-    Added {
-        name: String,
-        ty: String,
-    },
+    Added { name: String, ty: String },
     /// Field was removed
-    Removed {
-        name: String,
-        ty: String,
-    },
+    Removed { name: String, ty: String },
     /// Field type was changed
     TypeChanged {
         name: String,
@@ -40,7 +34,11 @@ impl std::fmt::Display for FieldChange {
             FieldChange::Removed { name, ty } => {
                 write!(f, "{} {}: {}", "-".red(), name.red(), ty)
             }
-            FieldChange::TypeChanged { name, old_ty, new_ty } => {
+            FieldChange::TypeChanged {
+                name,
+                old_ty,
+                new_ty,
+            } => {
                 write!(
                     f,
                     "{} {}: {} => {}",
@@ -50,7 +48,11 @@ impl std::fmt::Display for FieldChange {
                     new_ty.green()
                 )
             }
-            FieldChange::Renamed { old_name, new_name, ty } => {
+            FieldChange::Renamed {
+                old_name,
+                new_name,
+                ty,
+            } => {
                 write!(
                     f,
                     "{} {} => {}: {}",
@@ -102,8 +104,8 @@ fn get_file_at_commit(repo: &Repository, file_path: &str, commit_ref: &str) -> R
         .peel_to_blob()
         .with_context(|| "Failed to get blob")?;
 
-    let content = std::str::from_utf8(blob.content())
-        .with_context(|| "File content is not valid UTF-8")?;
+    let content =
+        std::str::from_utf8(blob.content()).with_context(|| "File content is not valid UTF-8")?;
 
     Ok(content.to_string())
 }
