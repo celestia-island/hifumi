@@ -30,14 +30,22 @@ pub fn generate_migration_code(
             FieldChange::Removed { name, ty } => {
                 migration_rules.push(format!("    - {}: {},", name, ty));
             }
-            FieldChange::TypeChanged { name, old_ty, new_ty } => {
+            FieldChange::TypeChanged {
+                name,
+                old_ty,
+                new_ty,
+            } => {
                 // Type change requires a converter
                 migration_rules.push(format!(
                     "    {}: {} => {} {{ /* TODO: Add converter */ }},",
                     name, old_ty, new_ty
                 ));
             }
-            FieldChange::Renamed { old_name, new_name, ty } => {
+            FieldChange::Renamed {
+                old_name,
+                new_name,
+                ty,
+            } => {
                 migration_rules.push(format!("    {} => {}: {},", old_name, new_name, ty));
             }
         }

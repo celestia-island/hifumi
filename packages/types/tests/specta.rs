@@ -65,7 +65,7 @@ fn specta_typescript_export() -> Result<()> {
     #[version("0.1")]
     #[derive(Debug, Clone, PartialEq, Type)]
     struct User {
-        id: i32,  // 使用 i32 而不是 i64，因为 specta 默认不支持 BigInt
+        id: i32, // 使用 i32 而不是 i64，因为 specta 默认不支持 BigInt
         name: String,
         email: Option<String>,
         tags: Vec<String>,
