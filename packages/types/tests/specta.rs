@@ -50,11 +50,11 @@ fn specta_with_migration() -> Result<()> {
     let test: Test = serde_json::from_str(r#"{"$version":"0.1","a":1,"b":"hello"}"#)?;
     assert_eq!(test.a, 1);
     assert_eq!(test.b, "hello");
-    assert_eq!(test.c, false); // 默认值
+    assert!(!test.c); // 默认值
 
     // 从 0.2 版本直接解析
     let test: Test = serde_json::from_str(r#"{"$version":"0.2","a":1,"b":"hello","c":true}"#)?;
-    assert_eq!(test.c, true);
+    assert!(test.c);
 
     Ok(())
 }
