@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 hifumi = { path = "../types" }
-yuuka = "0.6"
+yuuka = "^0.6"
 
 anyhow = { workspace = true }
 serde = { workspace = true }
