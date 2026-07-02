@@ -1,4 +1,4 @@
-<img src="splash.png" alt="hifumi" />
+<p align="center"><img src="docs/logo.webp" alt="Hifumi" width="240" /></p>
 
 ![Crates.io License](https://img.shields.io/crates/l/hifumi)
 [![Crates.io Version](https://img.shields.io/crates/v/hifumi)](https://docs.rs/hifumi)
