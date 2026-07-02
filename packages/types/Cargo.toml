@@ -12,7 +12,7 @@ repository = "https://github.com/celestia-island/hifumi"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-_macros = { path = "../macros", version = "0.1.1", package = "hifumi-macros" }
+_macros = { path = "../macros", version = "^0.1.1", package = "hifumi-macros" }
 
 anyhow = { workspace = true }
 
@@ -20,4 +20,4 @@ serde = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-specta = "1.0.5"
+specta = "^1.0.5"
