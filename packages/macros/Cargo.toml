@@ -13,10 +13,7 @@ proc-macro = true
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
-derive_more = { workspace = true }
 
-serde = { workspace = true }
 sqids = { workspace = true }
 
 syn = { version = "^2", features = ["full"] }

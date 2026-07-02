@@ -18,6 +18,4 @@ clap = { version = "^4", features = ["derive"] }
 git2 = "^0.19"
 syn = { version = "^2", features = ["full", "parsing", "extra-traits"] }
 quote = "^1"
-proc-macro2 = "^1"
-similar = "^2"
 colored = "^2"
