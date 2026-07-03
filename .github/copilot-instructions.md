@@ -166,10 +166,10 @@ struct MyConfig { ... }
 
 ```bash
 # 分析两个 commit 之间的结构体变化
-hifumi analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
+hifumi-cli analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
 
 # 生成迁移代码
-hifumi generate -f src/models.rs -s MyStruct \
+hifumi-cli generate -f src/models.rs -s MyStruct \
   --from-version "0.1" --to-version "0.2" \
   --from-commit HEAD~1 --to-commit HEAD
 ```

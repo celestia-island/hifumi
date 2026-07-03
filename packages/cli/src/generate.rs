@@ -37,7 +37,7 @@ pub fn generate_migration_code(
             } => {
                 // Type change requires a converter
                 migration_rules.push(format!(
-                    "    {}: {} => {} {{ /* TODO: Add converter */ }},",
+                    "    {}: {} => {} {{ todo!(\"Add converter\") }},",
                     name, old_ty, new_ty
                 ));
             }
