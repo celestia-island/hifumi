@@ -119,13 +119,13 @@ cargo install hifumi-cli
 ### 分析结构体变更
 
 ```bash
-hifumi analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
+hifumi-cli analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
 ```
 
 ### 生成迁移代码
 
 ```bash
-hifumi generate -f src/models.rs -s MyStruct \
+hifumi-cli generate -f src/models.rs -s MyStruct \
   --from-version "0.1" --to-version "0.2" \
   --from-commit HEAD~1 --to-commit HEAD
 ```
