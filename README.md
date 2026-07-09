@@ -65,7 +65,7 @@ struct User {
 let ts = specta::ts::export::<User>(&Default::default())?;
 ```
 
-## TODO
+## Features
 
 - [x] Support `specta` for TypeScript type export.
 - [x] Support `yuuka` (via serde-based interop layer).
