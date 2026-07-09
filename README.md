@@ -1,5 +1,9 @@
 <p align="center"><img src="https://raw.githubusercontent.com/celestia-island/hifumi/master/docs/logo.webp" alt="Hifumi" width="240" /></p>
 
+<h1 align="center">Hifumi</h1>
+
+<p align="center"><strong>A serialization library for migrating data between different versions</strong></p>
+
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/celestia-island/hifumi/test.yml)
 
 ## Introduction
