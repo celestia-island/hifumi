@@ -7,6 +7,8 @@ publish = true
 description = "CLI tool for hifumi - generate migration code from git history"
 license = "Apache-2.0"
 repository = "https://github.com/celestia-island/hifumi"
+keywords.workspace = true
+categories.workspace = true
 
 [[bin]]
 name = "hifumi-cli"

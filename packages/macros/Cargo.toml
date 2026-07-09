@@ -7,6 +7,8 @@ publish = true
 description = "A serialization library for migrating data between different versions"
 license = "Apache-2.0"
 repository = "https://github.com/celestia-island/hifumi"
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 proc-macro = true
