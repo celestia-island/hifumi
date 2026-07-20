@@ -5,15 +5,8 @@ edition.workspace = true
 
 publish = true
 description = "A serialization library for migrating data between different versions"
-<<<<<<< HEAD
 license = "Apache-2.0"
 repository = "https://github.com/celestia-island/hifumi"
-=======
-license-file = "LICENSE"
-repository = "https://github.com/celestia-island/hifumi"
-keywords.workspace = true
-categories.workspace = true
->>>>>>> origin/dev
 
 [lib]
 proc-macro = true

@@ -13,12 +13,9 @@ authors = ["langyo <langyo.china@gmail.com>"]
 
 version = "0.1.1"
 edition = "2021"
-<<<<<<< HEAD
-=======
 rust-version = "1.75"
 keywords = ["serialization", "migration", "versioning", "data", "migrate"]
 categories = ["data-structures", "encoding"]
->>>>>>> origin/dev
 
 [workspace.dependencies]
 anyhow = "^1"

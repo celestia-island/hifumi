@@ -1,12 +1,4 @@
-<<<<<<< HEAD
 <p align="center"><img src="https://raw.githubusercontent.com/celestia-island/hifumi/master/docs/logo.webp" alt="Hifumi" width="240" /></p>
-=======
-<p align="center"><img src="https://raw.githubusercontent.com/celestia-island/docs.celestia.world/dev/res/logo/hifumi.webp" alt="Hifumi" width="240" /></p>
-
-<h1 align="center">Hifumi</h1>
-
-<p align="center"><strong>A serialization library for migrating data between different versions</strong></p>
->>>>>>> origin/dev
 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/celestia-island/hifumi/test.yml)
 
@@ -73,11 +65,7 @@ struct User {
 let ts = specta::ts::export::<User>(&Default::default())?;
 ```
 
-<<<<<<< HEAD
 ## TODO
-=======
-## Features
->>>>>>> origin/dev
 
 - [x] Support `specta` for TypeScript type export.
 - [x] Support `yuuka` (via serde-based interop layer).
