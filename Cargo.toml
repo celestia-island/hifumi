@@ -18,8 +18,8 @@ keywords = ["serialization", "migration", "versioning", "data", "migrate"]
 categories = ["data-structures", "encoding"]
 
 [workspace.dependencies]
-anyhow = "^1"
 
+anyhow = "^1"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 sqids = "^0.4"

@@ -13,9 +13,10 @@ name = "hifumi-cli"
 path = "src/main.rs"
 
 [dependencies]
+
 anyhow = { workspace = true }
 clap = { version = "^4", features = ["derive"] }
-git2 = "^0.19"
-syn = { version = "^2", features = ["full", "parsing", "extra-traits"] }
-quote = "^1"
 colored = "^2"
+git2 = "^0.19"
+quote = "^1"
+syn = { version = "^2", features = ["full", "parsing", "extra-traits"] }

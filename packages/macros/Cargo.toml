@@ -12,10 +12,9 @@ repository = "https://github.com/celestia-island/hifumi"
 proc-macro = true
 
 [dependencies]
+
 anyhow = { workspace = true }
-
-sqids = { workspace = true }
-
-syn = { version = "^2", features = ["full"] }
 proc-macro2 = { version = "^1", features = ["span-locations"] }
 quote = "^1"
+sqids = { workspace = true }
+syn = { version = "^2", features = ["full"] }

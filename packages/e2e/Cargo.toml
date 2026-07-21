@@ -5,7 +5,9 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+
 hifumi = { path = "../types" }
+
 yuuka = "^0.6"
 
 anyhow = { workspace = true }
