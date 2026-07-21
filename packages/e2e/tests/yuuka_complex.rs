@@ -10,9 +10,9 @@ use yuuka::derive_struct;
 
 use hifumi_e2e::yuuka_interop::{hifumi_to_yuuka, yuuka_to_hifumi_with_version};
 
-// ============================================================================
+// ------
 // Scenario 1: Nested structures
-// ============================================================================
+// ------
 
 derive_struct!(
     #[derive(Serialize, Deserialize, PartialEq)]
@@ -95,9 +95,9 @@ fn test_nested_struct_conversion() -> Result<()> {
     Ok(())
 }
 
-// ============================================================================
+// ------
 // Scenario 2: Version migration from old format
-// ============================================================================
+// ------
 
 #[version("0.3")]
 #[derive(Debug, Clone, PartialEq)]
@@ -172,9 +172,9 @@ fn test_hifumi_v3_to_yuuka_v3() -> Result<()> {
     Ok(())
 }
 
-// ============================================================================
+// ------
 // Scenario 3: Array fields
-// ============================================================================
+// ------
 
 derive_struct!(
     #[derive(Serialize, Deserialize, PartialEq)]
@@ -216,9 +216,9 @@ fn test_array_field_conversion() -> Result<()> {
     Ok(())
 }
 
-// ============================================================================
+// ------
 // Scenario 4: Optional fields
-// ============================================================================
+// ------
 
 derive_struct!(
     #[derive(Serialize, Deserialize, PartialEq)]
