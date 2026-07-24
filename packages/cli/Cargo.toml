@@ -16,6 +16,6 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 clap = { version = "^4", features = ["derive"] }
 git2 = "^0.19"
-syn = { version = "^2", features = ["full", "parsing", "extra-traits"] }
+syn = { version = "^3", features = ["full", "parsing", "extra-traits"] }
 quote = "^1"
 colored = "^2"

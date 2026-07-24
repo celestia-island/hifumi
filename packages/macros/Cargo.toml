@@ -16,6 +16,6 @@ anyhow = { workspace = true }
 
 sqids = { workspace = true }
 
-syn = { version = "^2", features = ["full"] }
+syn = { version = "^3", features = ["full"] }
 proc-macro2 = { version = "^1", features = ["span-locations"] }
 quote = "^1"
