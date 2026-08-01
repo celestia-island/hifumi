@@ -7,7 +7,7 @@ use syn::{
 
 use super::MigrationComment;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Migration {
     pub versions: Vec<MigrationComment>,
     pub extra_macros: Vec<(Ident, TokenStream)>,

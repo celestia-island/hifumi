@@ -6,7 +6,7 @@ use syn::{
 
 use super::MigrationField;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MigrationComment {
     pub from: LitStr,
     pub to: LitStr,

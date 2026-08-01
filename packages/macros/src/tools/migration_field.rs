@@ -5,7 +5,7 @@ use syn::{
     token, Ident, Token, TypePath,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum MigrationField {
     Add {
         value: (Ident, TypePath),

@@ -8,7 +8,7 @@ use syn::{
 /// 支持以下两种形式：
 /// - `#[version("0.1")]` - 显式指定版本
 /// - `#[version]` - 自动使用 `CARGO_PKG_VERSION` 环境变量
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeriveVersion {
     /// 版本字符串，如果为 None 则使用 CARGO_PKG_VERSION
     pub version: Option<String>,

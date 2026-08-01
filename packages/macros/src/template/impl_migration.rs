@@ -3,6 +3,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::BTreeMap;
 use syn::{Ident, Type};
+use quote::ToTokens;
 
 use crate::{
     tools::{MigrationComment, MigrationField},
@@ -89,7 +90,7 @@ fn generate_older_version_impl(
                         if source.len() == 1 {
                             let (source_ident, source_ty) = source.iter().next().unwrap();
 
-                            if source_ty == target_ty {
+                            if source_ty.to_token_stream().to_string() == target_ty.to_token_stream().to_string() {
                                 struct_fields.insert(
                                     target_ident.clone(),
                                     quote! {
@@ -158,7 +159,7 @@ fn generate_older_version_impl(
                         if source.len() == 1 {
                             let (source_ident, source_ty) = source.iter().next().unwrap();
 
-                            if source_ty == target_ty {
+                            if source_ty.to_token_stream().to_string() == target_ty.to_token_stream().to_string() {
                                 struct_fields.insert(
                                     target_ident.clone(),
                                     quote! {
