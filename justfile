@@ -1,9 +1,11 @@
 import "./celestia-devtools.just"
 
 set shell := ["bash", "-c"]
-# On Windows just resolves recipe shebangs through the shell named here; without
-# it just falls back to `cygpath`, which Git for Windows does not put on PATH.
-set windows-shell := ["bash.exe", "-c"]
+# Windows: PowerShell (the 5.1 floor ships with every Windows; pwsh 7 is
+# NOT assumed). Linewise recipes must stay PS-5.1-safe: no `&&` chains,
+# `cd X; cmd` instead of `cd X && cmd`. Bash-only recipes use
+# [script('bash')] and need Git Bash (or WSL) when actually run.
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $PSDefaultParameterValues['*:Encoding']='utf8';"]
 # `set lists` enables which() (used by the imported celestia-devtools.just);
 # `set unstable` gates it.
 set unstable
