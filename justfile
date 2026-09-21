@@ -11,6 +11,10 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command", "[C
 set unstable
 set lists
 
+# Repo definitions override the shared template's (imported above).
+set allow-duplicate-recipes
+set allow-duplicate-variables
+
 default:
     @just --list
 
