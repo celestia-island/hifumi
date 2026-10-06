@@ -2,16 +2,33 @@ use anyhow::{anyhow, Result};
 use proc_macro::TokenStream;
 use quote::quote;
 use std::collections::BTreeMap;
-use syn::parse_macro_input;
+use syn::{parse_macro_input, ItemMod};
 
 mod template;
 mod tools;
 mod utils;
 
 use template::{
-    generate_current_version_struct, generate_impl_froms, generate_old_version_structs,
+    generate_app_migrations_module, generate_current_version_struct, generate_impl_froms,
+    generate_old_version_structs,
 };
 use tools::{DeriveVersion, Migration};
+
+/// 应用版本一次性动作：标注一个模块，收集其中带 `#[once(...)]` 的函数
+/// 生成动作注册表（见 `hifumi::app`）。
+///
+/// 版本参数缺省时取被标注 crate 的 `CARGO_PKG_VERSION`，与 `#[version]`
+/// 同一约定。语法错误以编译错误形式报告在原始位置。
+#[proc_macro_attribute]
+pub fn app_migrations(attr: TokenStream, input: TokenStream) -> TokenStream {
+    let attr: DeriveVersion = parse_macro_input!(attr);
+    let input: ItemMod = parse_macro_input!(input);
+
+    match generate_app_migrations_module(attr, input) {
+        Ok(output) => output.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
 
 #[proc_macro_attribute]
 pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {

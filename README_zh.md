@@ -65,12 +65,58 @@ struct User {
 let ts = specta::ts::export::<User>(&Default::default())?;
 ```
 
+### 应用版本一次性动作
+
+除了迁移数据结构，hifumi 还为"应用自身升级跨入某版本时执行**一次**"的动作提供脚手架 —— 修复、偏好改写，或任何每个档案只应发生一次的事情：
+
+```rust
+use hifumi::app_migrations;
+
+#[app_migrations]  // 当前应用版本；缺省取 CARGO_PKG_VERSION
+mod app_migrations_registry {
+    use anyhow::Result;
+    use hifumi::app::AppMigrationContext;
+
+    /// 升级跨入 "0.5.2" 时执行一次，来源版本不限。
+    #[once("0.5.2")]
+    fn rewrite_config(_ctx: &AppMigrationContext) -> Result<()> {
+        // ...
+        Ok(())
+    }
+
+    /// 仅当从 "0.5.0" 及以后升级跨入 "0.6.0" 时执行。
+    #[once("0.5.0" => "0.6.0")]
+    fn repair_settings(_ctx: &AppMigrationContext) -> Result<()> {
+        // ...
+        Ok(())
+    }
+
+    /// 不在本地执行：保持待办状态，直到外部执行者（例如 WebView 前端）
+    /// 回报完成。函数体应留空。
+    #[once("0.5.2", delegate)]
+    fn webview_side_action() {}
+}
+```
+
+宏会在模块内追加一个隐藏的 `registry()`，返回 `AppMigrationSet`。准入判据是"升级跨入了该动作的版本"：`上次版本 < since <= 当前版本`，`上次版本` 来自 JSON 文件账本（`AppMigrationStore`）。首次安装（没有上次版本）不执行任何动作；`from` 版本为来源加下限。
+
+执行成功的动作会被记账且永不重跑；执行失败的动作不记账、下次启动重试 —— 动作应保持幂等。`delegate` 动作由 `set.delegated_pending(&store)` 列出，交由外部执行者完成后通过 `set.mark_completed(&mut store, id)` 回报。
+
+```rust
+let set = app_migrations_registry::registry();
+let mut store = AppMigrationStore::load(config_dir.join("app-migrations.json"))?;
+store.seed_last_run_version(previous_hint); // 仅在账本刚创建时补种上次版本
+let run = set.run_immediate(&mut store); // 执行并记录本地动作
+let pending = set.delegated_pending(&store); // 交给外部执行者
+```
+
 ## 待办事项
 
 - [x] 支持 `specta` 导出 TypeScript 类型。
 - [x] 支持 `yuuka`（通过基于 serde 的互操作层）。
 - [x] 版本字段可以自动使用 crate 版本。
 - [x] 从 git 历史自动生成迁移代码。
+- [x] 应用版本一次性动作脚手架（`#[app_migrations]` + `#[once]`）。
 
 ## 与 Yuuka 的互操作性
 
