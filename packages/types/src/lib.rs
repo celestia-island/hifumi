@@ -1,4 +1,6 @@
-pub use _macros::version;
+pub use _macros::{app_migrations, version};
+
+pub mod app;
 
 use anyhow::Result;
 
