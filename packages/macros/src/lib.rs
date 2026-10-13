@@ -35,7 +35,15 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr: DeriveVersion = parse_macro_input!(attr);
     let input: Migration = parse_macro_input!(input);
 
-    let version_string = attr.get_version();
+    // Audit hifumi-R1-3: a missing version surfaces as a compile error.
+    let version_string = match attr.get_version() {
+        Ok(v) => v,
+        Err(e) => {
+            return syn::Error::new(proc_macro2::Span::call_site(), e)
+                .to_compile_error()
+                .into();
+        }
+    };
 
     let final_struct_fields = input
         .struct_data
@@ -58,12 +66,30 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     let versions = {
         let mut temp_version = version_string.clone();
         let mut ret = vec![];
+        // Audit hifumi-R1-1: the back-walk previously had no cycle
+        // guard — a self-loop or two-cycle in the migration DSL made
+        // the macro loop forever with unbounded growth (rustc hang →
+        // OOM, no diagnostic). Every visited `to` is recorded; repeats
+        // become a spanned compile error.
+        let mut visited = std::collections::HashSet::new();
 
         while let Some(item) = input
             .versions
             .iter()
             .find(|item| item.to.value() == temp_version)
         {
+            let to = item.to.value();
+            if !visited.insert(to.clone()) {
+                return syn::Error::new(
+                    item.to.span(),
+                    format!(
+                        "cycle in migration chain: version {to:?} is revisited; \
+                         each migration must move strictly backwards"
+                    ),
+                )
+                .to_compile_error()
+                .into();
+            }
             ret.push((item.from.value(), item.changes.clone(), item.to.value()));
             temp_version = item.from.value();
         }

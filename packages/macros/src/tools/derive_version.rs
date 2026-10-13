@@ -16,9 +16,19 @@ pub struct DeriveVersion {
 
 impl DeriveVersion {
     /// 获取版本字符串，如果未指定则使用 CARGO_PKG_VERSION
-    pub fn get_version(&self) -> String {
-        self.version.clone().unwrap_or_else(|| {
-            std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string())
+    ///
+    /// Audit hifumi-R1-3: env 缺失时显式报错而非静默钉 0.0.0——静默
+    /// 回退会让数据以错误版本号落盘，事后修正版本号即 unknown variant。
+    pub fn get_version(&self) -> anyhow::Result<String> {
+        if let Some(v) = &self.version {
+            return Ok(v.clone());
+        }
+        std::env::var("CARGO_PKG_VERSION").map_err(|e| {
+            anyhow::anyhow!(
+                "CARGO_PKG_VERSION is not set and no explicit version was given to \
+                 #[version]: the struct would be silently pinned to 0.0.0"
+            )
+            .context(e)
         })
     }
 }

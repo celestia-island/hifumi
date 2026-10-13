@@ -199,8 +199,18 @@ pub(crate) fn generate_impl_froms(
     let mut temp_struct_fields = final_struct_fields.to_owned();
     let mut temp_version = final_version.clone();
     let mut impl_froms = vec![];
+    // Audit hifumi-R1-1: same cycle guard as the version() macro walk —
+    // a DSL self-loop/2-cycle would loop here forever.
+    let mut visited = std::collections::HashSet::new();
 
     while let Some(item) = versions.iter().find(|item| item.to.value() == temp_version) {
+        let to = item.to.value();
+        if !visited.insert(to.clone()) {
+            return Err(anyhow::anyhow!(
+                "cycle in migration chain: version {to:?} is revisited; \
+                 each migration must move strictly backwards"
+            ));
+        }
         temp_version = item.from.value();
         temp_struct_fields =
             infer_older_version_struct(temp_struct_fields.clone(), item.changes.clone())?;
