@@ -88,6 +88,12 @@ pub(crate) fn generate_app_migrations_module(
         })
         .collect::<Vec<_>>();
 
+    // `get_version()` is fallible (it reads Cargo.toml); surface the
+    // error as a spanned compile error instead of feeding a Result
+    // into LitStr::new (the E0308 that broke the engine build).
+    let version = version.map_err(|e| {
+        syn::Error::new(Span::call_site(), format!("app version lookup failed: {e}"))
+    })?;
     let version_lit = LitStr::new(&version, Span::call_site());
     items.push(syn::parse_quote! {
         /// 由 `#[app_migrations]` 生成的动作注册表
