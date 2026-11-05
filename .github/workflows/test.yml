@@ -31,9 +31,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # One full Rust test run per PR, on stable only (org-wide CI rule):
+        # the self-hosted farm has 4-6 slots and PR jobs queue 38-77 minutes.
+        # Nightly keeps only the static checks (clippy/fmt).
         toolchain:
           - stable
-          - nightly
 
     steps:
       - uses: actions/checkout@v7
