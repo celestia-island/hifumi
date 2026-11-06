@@ -9,13 +9,6 @@ concurrency:
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - '.github/workflows/test.yml'
-      - 'packages/**/*'
-      - 'Cargo.toml'
-  push:
-    branches: [master]
 
 jobs:
   test:
