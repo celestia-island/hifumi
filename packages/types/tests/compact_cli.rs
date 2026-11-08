@@ -303,3 +303,143 @@ fn compact_rejects_migration_before_version() {
     );
     std::fs::remove_file(&path).ok();
 }
+
+/// `pub(…) struct` / `pub struct`：可见性前缀不得挡住属性归属
+/// （decl_start 回扩修复的回归钉）。
+#[test]
+fn compact_handles_visibility_prefix() {
+    for vis in ["pub struct", "pub(crate) struct"] {
+        let fixture = format!(
+            r#"#[version("0.2")]
+#[migration("0.1" => "0.2" {{
+    + extra: i32,
+}})]
+{vis} Doc {{
+    extra: i32,
+}}
+"#
+        );
+        let path =
+            std::env::temp_dir().join(format!("hifumi-compact-{}-vis.rs", std::process::id()));
+        std::fs::write(&path, &fixture).unwrap();
+        let out = bin()
+            .args([
+                "compact",
+                "--file",
+                path.to_str().unwrap(),
+                "--struct-name",
+                "Doc",
+                "--baseline",
+                "0.2",
+                "--write",
+            ])
+            .output()
+            .expect("hifumi binary runs");
+        assert!(
+            out.status.success(),
+            "`{vis}` must compact: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let rewritten = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            rewritten.contains(r#"#[version("0.2", baseline = "0.2")]"#),
+            "`{vis}` baseline must land:\n{rewritten}"
+        );
+        assert!(
+            !rewritten.contains(r#""0.1" => "0.2""#),
+            "`{vis}` extinct step must go:\n{rewritten}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
+}
+
+/// 嵌套块注释夹层：Rust 块注释可嵌套，回跳必须落在最外层 `/*`。
+#[test]
+fn compact_survives_nested_block_comment() {
+    let fixture = r#"#[version("0.2")]
+#[migration("0.1" => "0.2" {
+    + extra: i32,
+})]
+/* outer /* nested */ still outer */
+pub struct Doc {
+    extra: i32,
+}
+"#;
+    let path =
+        std::env::temp_dir().join(format!("hifumi-compact-{}-nested.rs", std::process::id()));
+    std::fs::write(&path, fixture).unwrap();
+    let out = bin()
+        .args([
+            "compact",
+            "--file",
+            path.to_str().unwrap(),
+            "--struct-name",
+            "Doc",
+            "--baseline",
+            "0.2",
+            "--write",
+        ])
+        .output()
+        .expect("hifumi binary runs");
+    assert!(
+        out.status.success(),
+        "nested block comment must not break compaction: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let rewritten = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        rewritten.contains(r#"#[version("0.2", baseline = "0.2")]"#),
+        "baseline must land:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains(r#""0.1" => "0.2""#),
+        "extinct step must go:\n{rewritten}"
+    );
+    std::fs::remove_file(&path).ok();
+}
+
+/// 扫描器韧性（compact 路径）：块注释夹在属性与 struct 之间、文档注释
+/// 提及 `struct Doc`，都不得挡住真实声明的定位与属性认领。
+#[test]
+fn compact_survives_comment_shapes() {
+    let fixture = r#"#[version("0.2")]
+#[migration("0.1" => "0.2" {
+    + extra: i32,
+})]
+/// struct Doc is the stable shape.
+/* 块注释夹层 */
+pub struct Doc {
+    extra: i32,
+}
+"#;
+    let path = std::env::temp_dir().join(format!("hifumi-compact-{}-cmt.rs", std::process::id()));
+    std::fs::write(&path, fixture).unwrap();
+    let out = bin()
+        .args([
+            "compact",
+            "--file",
+            path.to_str().unwrap(),
+            "--struct-name",
+            "Doc",
+            "--baseline",
+            "0.2",
+            "--write",
+        ])
+        .output()
+        .expect("hifumi binary runs");
+    assert!(
+        out.status.success(),
+        "comment shapes must not break compaction: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let rewritten = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        rewritten.contains(r#"#[version("0.2", baseline = "0.2")]"#),
+        "baseline must land:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains(r#""0.1" => "0.2""#),
+        "extinct step must go:\n{rewritten}"
+    );
+    std::fs::remove_file(&path).ok();
+}
