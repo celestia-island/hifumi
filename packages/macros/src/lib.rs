@@ -9,8 +9,8 @@ mod tools;
 mod utils;
 
 use template::{
-    generate_app_migrations_module, generate_current_version_struct, generate_impl_froms,
-    generate_old_version_structs,
+    generate_app_migrations_module, generate_current_version_struct, generate_downgrade_impl,
+    generate_impl_froms, generate_old_version_structs,
 };
 use tools::{DeriveVersion, Migration};
 
@@ -122,6 +122,14 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     )
     .expect("Failed to generate impl froms");
 
+    let downgrade_impl = generate_downgrade_impl(
+        &input.struct_data.ident,
+        version_string.clone(),
+        &final_struct_fields,
+        input.versions.clone(),
+    )
+    .expect("Failed to generate downgrade impl");
+
     let current_version_struct = generate_current_version_struct(
         attr.clone(),
         input.clone(),
@@ -136,6 +144,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         #current_version_struct
         #old_version_structs
         #impl_versions
+        #downgrade_impl
     }
     .into()
 }
