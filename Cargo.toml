@@ -13,7 +13,7 @@ authors = ["langyo <langyo.china@gmail.com>"]
 
 version = "0.2.1"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
 keywords = ["serialization", "migration", "versioning", "data", "migrate"]
 categories = ["data-structures", "encoding"]
 
