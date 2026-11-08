@@ -26,7 +26,7 @@ pub(crate) fn infer_older_version_struct(
                     struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
                 }
             }
-            MigrationField::Remove { value } => {
+            MigrationField::Remove { value, .. } => {
                 let (ident, ty) = value;
                 struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
             }
