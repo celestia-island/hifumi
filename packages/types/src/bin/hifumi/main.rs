@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 
 mod analyze;
 mod compact;
+mod export_ts;
 mod generate;
 
 use analyze::analyze_struct_changes;
@@ -83,6 +84,17 @@ enum Commands {
         #[arg(short, long)]
         write: bool,
     },
+
+    /// Export a TS migration runner for the #[version] structs in a file
+    ExportTs {
+        /// Path to the Rust source file containing the structs
+        #[arg(short, long)]
+        file: String,
+
+        /// Write the runner to this path (default: print to stdout)
+        #[arg(short, long)]
+        out: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -123,6 +135,12 @@ fn main() -> Result<()> {
             write,
         } => {
             compact::compact_file(std::path::Path::new(&file), &struct_name, &baseline, write)?;
+        }
+        Commands::ExportTs { file, out } => {
+            export_ts::export_file(
+                std::path::Path::new(&file),
+                out.as_deref().map(std::path::Path::new),
+            )?;
         }
     }
 

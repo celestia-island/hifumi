@@ -4,6 +4,7 @@ pub mod app;
 pub mod downgrade;
 pub mod forward;
 pub mod registry;
+pub mod ts;
 pub mod wire;
 
 pub use downgrade::{__downgrade_json, DowngradeError};

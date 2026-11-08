@@ -113,6 +113,7 @@ let pending = set.delegated_pending(&store); // hand to the external runner
 ## TODO
 
 - [x] Support `specta` for TypeScript type export.
+- [x] Export a forward-only TypeScript migration runner from Rust `#[version]` chains (`hifumi export-ts`).
 - [x] Support `yuuka` (via serde-based interop layer).
 - [x] Version field can use crate version automatically.
 - [x] Generate migration code automatically from the git history.

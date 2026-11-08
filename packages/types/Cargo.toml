@@ -18,7 +18,7 @@ required-features = ["cli"]
 
 [features]
 default = ["cli"]
-cli = ["dep:clap", "dep:git2", "dep:colored", "dep:syn", "dep:quote"]
+cli = ["dep:clap", "dep:git2", "dep:colored", "dep:syn", "dep:quote", "dep:proc-macro2"]
 
 [dependencies]
 _macros = { path = "../macros", version = "^0.2.0", package = "hifumi-macros" }
@@ -34,6 +34,9 @@ git2 = { version = "^0.21", default-features = false, optional = true }
 colored = { version = "^3", optional = true }
 syn = { version = "^3", features = ["full", "parsing", "extra-traits"], optional = true }
 quote = { version = "^1", optional = true }
+# `export-ts` 子命令逐 token 分类 #[migration] 字段形态，需要直接操作
+# proc-macro2 的 TokenStream（syn 之上的手写 ParseStream 解析）。
+proc-macro2 = { version = "^1", optional = true }
 # postcard 为 wire 通道的非可选编解码器（serde + cobs，无默认特征）。
 # 不能做成可选特征：宏生成的 WireCodec 实现无条件引用 ::hifumi::wire，
 # 而生成物无法感知消费者侧的特征 cfg（特征统一 ≠ cfg 门控）。

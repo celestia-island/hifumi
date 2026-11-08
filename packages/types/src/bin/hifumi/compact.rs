@@ -12,10 +12,21 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 /// 扫描出的属性块：字节范围 + 文本。
-struct AttrBlock {
-    start: usize,
-    end: usize,
-    text: String,
+pub(crate) struct AttrBlock {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) text: String,
+}
+
+/// DSL 属性判定：`#[version(…)]` / 裸 `#[version]`（CARGO_PKG_VERSION
+/// 回退）；不误吞 `#[versioned_…]` 之类同前缀属性。
+pub(crate) fn is_version_block(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with("#[version(") || t == "#[version]"
+}
+
+pub(crate) fn is_migration_block(text: &str) -> bool {
+    text.trim_start().starts_with("#[migration(")
 }
 
 /// 在 `#[version(...)]` 属性里追加 `baseline = "Y"`，并删除 `to`
@@ -24,19 +35,21 @@ struct AttrBlock {
 /// 返回重写后的完整文件内容。`--write` 语义由调用方落盘。
 pub fn compact_source(source: &str, struct_name: &str, baseline: &str) -> Result<String> {
     let struct_span = locate_struct(source, struct_name)?;
-    let blocks = scan_attr_blocks(source, struct_span.0)?;
+    // 归属扫描从声明起点（含 `pub` / `pub(…)` 前缀）回走，否则可见性
+    // 关键字会挡在属性与光标之间，`pub struct` 拿不到任何属性。
+    let blocks = scan_attr_blocks(source, decl_start(source, struct_span.0))?;
 
     let version_block = blocks
         .iter()
-        .find(|b| b.text.trim_start().starts_with("#[version"))
+        .find(|b| is_version_block(&b.text))
         .with_context(|| format!("no #[version] attribute on `{struct_name}`"))?;
-    if count_attr(&blocks, "#[version") > 1 {
+    if blocks.iter().filter(|b| is_version_block(&b.text)).count() > 1 {
         bail!("multiple #[version] attributes on `{struct_name}`");
     }
 
     let migrations = blocks
         .iter()
-        .filter(|b| b.text.trim_start().starts_with("#[migration"))
+        .filter(|b| is_migration_block(&b.text))
         .map(|b| {
             let (from, to) = migration_versions(&b.text)?;
             Ok((from, to, b))
@@ -135,6 +148,7 @@ pub fn compact_source(source: &str, struct_name: &str, baseline: &str) -> Result
 /// 定位结构体声明主体的字节范围（`struct NAME` 到配平的 `}`）。
 fn locate_struct(source: &str, name: &str) -> Result<(usize, usize)> {
     let needle = format!("struct {name}");
+    let ignored = ignored_spans(source);
     let mut search_from = 0usize;
     loop {
         let rel = source[search_from..]
@@ -147,7 +161,8 @@ fn locate_struct(source: &str, name: &str) -> Result<(usize, usize)> {
                 .chars()
                 .next_back()
                 .is_some_and(|c| c.is_alphanumeric() || c == '_');
-        if prev_ok {
+        // 注释 / 字符串里提到 `struct NAME` 的幽灵命中跳过
+        if prev_ok && !in_ignored(&ignored, at) {
             // 结构体结束 = 从声明行向后找第一个配平的 `}`
             let body_start = source[at..]
                 .find('{')
@@ -159,8 +174,65 @@ fn locate_struct(source: &str, name: &str) -> Result<(usize, usize)> {
     }
 }
 
+/// 声明起点回扩：`struct` 前的 `pub` / `pub(crate)` 等可见性前缀也算
+/// 声明的一部分。属性归属扫描必须从它开始回走。
+pub(crate) fn decl_start(source: &str, at: usize) -> usize {
+    let bytes = source.as_bytes();
+    let mut start = at;
+    loop {
+        // 1) 跳过紧邻的空白
+        let mut t = start;
+        while t > 0 && bytes[t - 1].is_ascii_whitespace() {
+            t -= 1;
+        }
+        if t == start {
+            break; // 前面不是空白（或顶格）：没有可剥的前缀
+        }
+        // 2) `pub(…)`：先回配平一对括号
+        if bytes.get(t.wrapping_sub(1)) == Some(&b')') {
+            let mut depth = 0usize;
+            let mut i = t - 1;
+            let mut open = None;
+            while i > 0 {
+                match bytes[i] {
+                    b')' => depth += 1,
+                    b'(' => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            open = Some(i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                i -= 1;
+            }
+            match open {
+                Some(o) => t = o,
+                None => break,
+            }
+        }
+        // 3) 前一个词必须是 `pub`，否则到此为止（属性块、注释、其它项）
+        let mut w = t;
+        while w > 0 {
+            let b = bytes[w - 1];
+            if b.is_ascii_alphanumeric() || b == b'_' {
+                w -= 1;
+            } else {
+                break;
+            }
+        }
+        if &source[w..t] == "pub" {
+            start = w;
+        } else {
+            break;
+        }
+    }
+    start
+}
+
 /// 从 `open`（指向 `{`）起配平，返回闭括号后的偏移。
-fn match_brace(source: &str, open: usize) -> Result<usize> {
+pub(crate) fn match_brace(source: &str, open: usize) -> Result<usize> {
     let bytes = source.as_bytes();
     let mut depth = 0usize;
     let mut in_str = false;
@@ -226,16 +298,23 @@ fn match_brace(source: &str, open: usize) -> Result<usize> {
 
 /// 扫描紧邻结构体声明的连续属性块（`#[...]` 到配平收尾）。
 ///
-/// 只认 `#[` 块之间夹空白或 `//` 行注释的连续段——`#[version]` /
-/// `#[migration]` 是 DSL 属性，中间夹其它项说明找错了结构体。
-/// （`/* */` 块注释夹在属性之间属未支持形态，会在解析时暴露。）
-fn scan_attr_blocks(source: &str, struct_start: usize) -> Result<Vec<AttrBlock>> {
+/// 只认 `#[` 块之间夹空白、`//` 行注释或 `/* */` 块注释的连续段——
+/// `#[version]` / `#[migration]` 是 DSL 属性，中间夹其它项说明找错了
+/// 结构体。
+pub(crate) fn scan_attr_blocks(source: &str, struct_start: usize) -> Result<Vec<AttrBlock>> {
     let head = &source[..struct_start];
-    // 候选块：整个前文中所有 `#[...]` 配平块。
+    // 候选块：整个前文中所有 `#[...]` 配平块；注释与字符串字面量里的
+    // `#[` 不算（合法源码里 `// TODO: 修 #[broken]` 之类并不罕见，不排除
+    // 会把真实结构体的候选扫描炸掉或产出垃圾候选）。
+    let ignored = ignored_spans(head);
     let mut candidates: Vec<AttrBlock> = vec![];
     let mut i = 0usize;
     while let Some(rel) = head[i..].find("#[") {
         let start = i + rel;
+        if ignored.iter().any(|&(a, b)| start >= a && start < b) {
+            i = start + 2;
+            continue;
+        }
         let end = attr_end(head, start)?;
         candidates.push(AttrBlock {
             start,
@@ -268,6 +347,16 @@ fn scan_attr_blocks(source: &str, struct_start: usize) -> Result<Vec<AttrBlock>>
                 continue;
             }
         }
+        // 2.5) 块注释：光标前以 `*/` 收尾时，回跳到配对的 `/*`
+        if trimmed >= 2
+            && source.as_bytes()[trimmed - 2] == b'*'
+            && source.as_bytes()[trimmed - 1] == b'/'
+        {
+            if let Some(open) = source[..trimmed - 2].rfind("/*") {
+                cursor = open;
+                continue;
+            }
+        }
         // 3) 找 end == trimmed 的候选块
         match candidates.iter().rfind(|b| b.end == trimmed) {
             Some(b) => {
@@ -285,6 +374,54 @@ fn scan_attr_blocks(source: &str, struct_start: usize) -> Result<Vec<AttrBlock>>
         }
     }
     Ok(owned)
+}
+
+/// 预扫文本中「不参与语法」的区间：行注释、块注释、字符串字面量
+/// （朴素配对纪律与 [`string_literals`] 一致）。候选 `#[` 落在其中
+/// 即不是属性。误扫 raw string 时最坏只会少认候选，不会误认。
+pub(crate) fn ignored_spans(text: &str) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut spans = vec![];
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                let end = text[i..].find('\n').map(|p| i + p).unwrap_or(bytes.len());
+                spans.push((i, end));
+                i = end;
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                let end = text[i + 2..]
+                    .find("*/")
+                    .map(|p| i + 2 + p + 2)
+                    .unwrap_or(bytes.len());
+                spans.push((i, end));
+                i = end;
+            }
+            b'"' => {
+                // 字符串不跨行；行内找不到闭引号就当孤立引号跳过，
+                // 绝不把余下全文吞进 span（会误杀后续真实属性/命中）。
+                let line_end = text[i..].find('\n').map(|p| i + p).unwrap_or(bytes.len());
+                match text[i + 1..line_end].find('"') {
+                    Some(rel) => {
+                        let end = i + 1 + rel + 1;
+                        spans.push((i, end));
+                        i = end;
+                    }
+                    None => i += 1,
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    spans
+}
+
+/// `at` 处的命中是否落在注释（行 / 块）或字符串字面量内。文档注释里
+/// 提到 `struct X` 很常见——命中点必须跳过，否则幽灵命中会认领真
+/// 结构体的属性（重复名 bail 或导出幻影类型）。
+pub(crate) fn in_ignored(spans: &[(usize, usize)], at: usize) -> bool {
+    spans.iter().any(|&(a, b)| at >= a && at < b)
 }
 
 /// 属性块结束（`]` 之后），跳过字符串/注释/嵌套括号。
@@ -322,19 +459,12 @@ fn attr_end(source: &str, start: usize) -> Result<usize> {
     bail!("unterminated attribute starting at offset {start}")
 }
 
-fn count_attr(blocks: &[AttrBlock], prefix: &str) -> usize {
-    blocks
-        .iter()
-        .filter(|b| b.text.trim_start().starts_with(prefix))
-        .count()
-}
-
 /// 提取文本中所有 `"…"` 字符串字面量内容（配对消费开/闭引号）。
 ///
 /// 版本号字面量不含转义与嵌套引号；扫到开引号后直接找下一个 `"` 作为
 /// 闭引号并**跳过它**——朴素地按引号位置逐个取对，会把闭引号位置也当
 /// 成下一对的开头，把 ` => ` 这类夹层当成字面量。
-fn string_literals(text: &str) -> Vec<&str> {
+pub(crate) fn string_literals(text: &str) -> Vec<&str> {
     let mut lits = vec![];
     let bytes = text.as_bytes();
     let mut i = 0usize;
