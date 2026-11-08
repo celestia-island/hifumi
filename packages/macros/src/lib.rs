@@ -24,6 +24,17 @@ pub fn app_migrations(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr: DeriveVersion = parse_macro_input!(attr);
     let input: ItemMod = parse_macro_input!(input);
 
+    // `forward` 旗标只属于 `#[version]`；在 app_migrations 上出现说明
+    // 写错了位置——静默吞掉比报错更危险。
+    if attr.forward {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`forward` flag is not valid on #[app_migrations]; it belongs to #[version(.., forward)]",
+        )
+        .to_compile_error()
+        .into();
+    }
+
     match generate_app_migrations_module(attr, input) {
         Ok(output) => output.into(),
         Err(error) => error.to_compile_error().into(),
