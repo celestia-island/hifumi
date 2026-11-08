@@ -275,6 +275,24 @@ pub struct Real { pub a: u32 }"##,
         "embedded version must not leak: {out}"
     );
 
+    // 字节 raw string `br#"`（跨行）：同样不得产出幻影类型
+    let (ok, out, stderr) = run_export(
+        r##"const FIXTURE: &[u8] = br#"
+#[version("9.9")]
+struct Sample { pub a: u32 }
+"#;
+#[version("0.2")]
+pub struct Real { pub a: u32 }"##,
+        "byte-raw-string-embed",
+    );
+    assert!(ok, "br# string must not poison scan: {stderr}");
+    assert!(out.contains(r#""Real""#), "real type must export: {out}");
+    assert!(!out.contains("Sample"), "no phantom type: {out}");
+    assert!(
+        !out.contains("9.9"),
+        "embedded version must not leak: {out}"
+    );
+
     // 转义引号 + 字符串里的 `/*`：错误配对会让假块注释吞掉后续真结构体
     let (ok, out, stderr) = run_export(
         r#"const PATH: &str = "a\"/*b";

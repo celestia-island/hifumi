@@ -412,22 +412,38 @@ pub(crate) fn ignored_spans(text: &str) -> Vec<(usize, usize)> {
                 i = j;
             }
             b'"' => {
-                // raw string：向前看 `r` + N 个 `#`（`r` 前不能是标识符字符）。
-                // raw string 可跨行，闭界 = `"` + 同数 `#`；未闭合吞到 EOF。
+                // raw string：向前看 `r` + N 个 `#`（`r` 前可为 `b`/`c`，
+                // 即 `br#"` / `cr#"` 字节 / C 字符串 raw literal；整个前缀
+                // 之前不能还是标识符字符）。可跨行，闭界 = `"` + 同数
+                // `#`；未闭合吞到 EOF。
                 let mut hashes = 0usize;
                 let mut k = i;
                 while k > 0 && bytes[k - 1] == b'#' {
                     hashes += 1;
                     k -= 1;
                 }
-                let raw = k > 0
-                    && bytes[k - 1] == b'r'
-                    && (k - 1 == 0 || {
-                        let prev = text[..k - 1].chars().next_back().unwrap();
-                        !(prev.is_alphanumeric() || prev == '_')
-                    });
-                if raw {
-                    let opener = k - 1;
+                let ident_tail = |pos: usize| {
+                    pos > 0 && {
+                        let prev = text[..pos].chars().next_back().unwrap();
+                        prev.is_alphanumeric() || prev == '_'
+                    }
+                };
+                let opener = if k > 0 && bytes[k - 1] == b'r' {
+                    let r_pos = k - 1;
+                    if !ident_tail(r_pos) {
+                        Some(r_pos)
+                    } else if r_pos > 0
+                        && matches!(bytes[r_pos - 1], b'b' | b'c')
+                        && !ident_tail(r_pos - 1)
+                    {
+                        Some(r_pos - 1)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(opener) = opener {
                     let closer = format!("\"{}", "#".repeat(hashes));
                     let end = text[i + 1..]
                         .find(&closer)
