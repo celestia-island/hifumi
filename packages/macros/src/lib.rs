@@ -24,12 +24,20 @@ pub fn app_migrations(attr: TokenStream, input: TokenStream) -> TokenStream {
     let attr: DeriveVersion = parse_macro_input!(attr);
     let input: ItemMod = parse_macro_input!(input);
 
-    // `forward` 旗标只属于 `#[version]`；在 app_migrations 上出现说明
-    // 写错了位置——静默吞掉比报错更危险。
+    // `forward` / `baseline` 只属于 `#[version]`；在 app_migrations 上出现
+    // 说明写错了位置——静默吞掉比报错更危险。
     if attr.forward {
         return syn::Error::new(
             proc_macro2::Span::call_site(),
             "`forward` flag is not valid on #[app_migrations]; it belongs to #[version(.., forward)]",
+        )
+        .to_compile_error()
+        .into();
+    }
+    if attr.baseline.is_some() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`baseline = \"..\"` is not valid on #[app_migrations]; it belongs to #[version]",
         )
         .to_compile_error()
         .into();
@@ -101,8 +109,33 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
                 .to_compile_error()
                 .into();
             }
+            // 压缩底线：回溯撞上 baseline 时，该步（baseline ← 更老）及其
+            // 更早的步全部视为灭绝——不再生成。链从 baseline 结构起算。
+            if let Some(baseline) = &attr.baseline {
+                if &to == baseline {
+                    break;
+                }
+            }
             ret.push((item.from.value(), item.changes.clone(), item.to.value()));
             temp_version = item.from.value();
+        }
+        // baseline 必须真实存在于链上（或就是当前版本本身）；
+        // 拼写错误在这里变成编译错误而不是静默的“什么都不压缩”。
+        if let Some(baseline) = &attr.baseline {
+            let reachable =
+                baseline == &version_string || ret.iter().any(|(from, _, _)| from == baseline);
+            if !reachable {
+                return syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!(
+                        "baseline {baseline:?} is not a version of this chain; \
+                         expected one of the migration step versions or the current \
+                         version {version_string:?}"
+                    ),
+                )
+                .to_compile_error()
+                .into();
+            }
         }
         ret
     };
@@ -124,12 +157,23 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     )
     .expect("Failed to generate old version structs");
 
+    // baseline 截断后只保留仍在链上的迁移步（按 `to` 匹配回溯出的保留集），
+    // From 链与降级生成器看到的世界与旧结构生成完全一致。
+    let retained_tos: std::collections::HashSet<String> =
+        versions.iter().map(|(_, _, to)| to.clone()).collect();
+    let retained_migrations = input
+        .versions
+        .iter()
+        .filter(|item| retained_tos.contains(&item.to.value()))
+        .cloned()
+        .collect::<Vec<_>>();
+
     // Confirm the order of the versions
     let impl_versions = generate_impl_froms(
         input.struct_data.ident.clone(),
         version_string.clone(),
         final_struct_fields.clone(),
-        input.versions.clone(),
+        retained_migrations.clone(),
     )
     .expect("Failed to generate impl froms");
 
@@ -137,7 +181,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         &input.struct_data.ident,
         version_string.clone(),
         &final_struct_fields,
-        input.versions.clone(),
+        retained_migrations,
     )
     .expect("Failed to generate downgrade impl");
 

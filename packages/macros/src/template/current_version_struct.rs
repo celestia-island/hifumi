@@ -179,6 +179,16 @@ pub(crate) fn generate_current_version_struct(
         Span::call_site(),
     );
     let meta_forward = LitBool::new(attr.forward, Span::call_site());
+    // ⑤ 压缩底线：None = 链未压缩；Some(v) = v 之前的版本已灭绝、不再生成。
+    // 注意 quote 对 Option 的插值是「None 渲染为空、Some(x) 渲染为 x」，
+    // 必须手工包一层 Some/None。
+    let meta_baseline = match &attr.baseline {
+        Some(b) => {
+            let lit = LitStr::new(b, Span::call_site());
+            quote! { ::core::option::Option::Some(#lit) }
+        }
+        None => quote! { ::core::option::Option::None },
+    };
     let meta_const = quote! {
         #[automatically_derived]
         impl #ident {
@@ -188,7 +198,35 @@ pub(crate) fn generate_current_version_struct(
                 versions: &[#(#meta_version_lits),*],
                 reversible: #meta_reversible,
                 forward: #meta_forward,
+                baseline: #meta_baseline,
             };
+        }
+    };
+
+    // ⑥ wire 编解码契约：postcard 是非自描述格式，载荷不能走带
+    // `$version` 标签的版本化 serde 表示（serde 对内部标签枚举调用
+    // deserialize_any，postcard 直接拒绝）。这里把 final 版本明文结构
+    // （宏内部的私有类型）作为唯一 wire 表示。
+    let impl_wire_codec = quote! {
+        #[automatically_derived]
+        impl ::hifumi::wire::WireCodec for #ident {
+            fn hifumi_wire_encode(
+                &self,
+            ) -> ::core::result::Result<::std::vec::Vec<u8>, ::hifumi::wire::WireError> {
+                ::hifumi::wire::encode_current(
+                    &#impl_serialize_final_version_ident::from(self.to_owned()),
+                )
+            }
+            fn hifumi_wire_decode(
+                bytes: &[u8],
+            ) -> ::core::result::Result<Self, ::hifumi::wire::WireError> {
+                Ok(
+                    ::hifumi::wire::decode_current::<#impl_serialize_final_version_ident>(
+                        bytes,
+                    )?
+                    .into(),
+                )
+            }
         }
     };
 
@@ -199,6 +237,7 @@ pub(crate) fn generate_current_version_struct(
         #impl_serialize
         #impl_deserialize
         #impl_try_from_value
+        #impl_wire_codec
         #meta_const
         #old_version_structs_enum
     })

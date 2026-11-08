@@ -13,6 +13,9 @@ pub struct TypeMeta {
     pub reversible: bool,
     /// 是否带 `forward` 旗标（未知版本按宽容读者解析）。
     pub forward: bool,
+    /// 压缩底线版本：`Some(v)` 时比 `v` 更老的版本已灭绝，`versions`
+    /// 只含 `v` → 当前；`None` = 未压缩。
+    pub baseline: Option<&'static str>,
 }
 
 #[doc(hidden)]
