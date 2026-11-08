@@ -157,19 +157,19 @@ let back: YuukaConfig = hifumi_to_yuuka(&hifumi_cfg)?;
 安装 CLI：
 
 ```bash
-cargo install hifumi-cli
+cargo install hifumi
 ```
 
 ### 分析结构体变更
 
 ```bash
-hifumi-cli analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
+hifumi analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
 ```
 
 ### 生成迁移代码
 
 ```bash
-hifumi-cli generate -f src/models.rs -s MyStruct \
+hifumi generate -f src/models.rs -s MyStruct \
   --from-version "0.1" --to-version "0.2" \
   --from-commit HEAD~1 --to-commit HEAD
 ```

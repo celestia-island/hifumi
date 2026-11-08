@@ -9,7 +9,7 @@ use generate::generate_migration_code;
 
 /// hifumi CLI - Generate migration code from git history
 #[derive(Parser)]
-#[command(name = "hifumi-cli")]
+#[command(name = "hifumi")]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]

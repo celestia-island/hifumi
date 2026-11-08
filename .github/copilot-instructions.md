@@ -162,21 +162,21 @@ struct MyConfig { ... }
 
 ### Git history migration generation (已完成)
 
-已创建 `hifumi-cli` crate 提供 CLI 工具：
+CLI 工具内置于 `hifumi` crate 本体（`cli` feature，默认开启；`cargo install hifumi` 即装）：
 
 ```bash
 # 分析两个 commit 之间的结构体变化
-hifumi-cli analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
+hifumi analyze -f src/models.rs -s MyStruct --from HEAD~1 --to HEAD
 
 # 生成迁移代码
-hifumi-cli generate -f src/models.rs -s MyStruct \
+hifumi generate -f src/models.rs -s MyStruct \
   --from-version "0.1" --to-version "0.2" \
   --from-commit HEAD~1 --to-commit HEAD
 ```
 
 **实现细节**：
-- `packages/cli/src/analyze.rs` - 分析 git 历史中的结构体变化
-- `packages/cli/src/generate.rs` - 生成迁移代码
-- 使用 `git2` 库读取 git 历史
+- `packages/types/src/bin/hifumi/analyze.rs` - 分析 git 历史中的结构体变化
+- `packages/types/src/bin/hifumi/generate.rs` - 生成迁移代码
+- 使用 `git2` 库读取 git 历史（`default-features = false`，仅本地读取）
 - 使用 `syn` 解析 Rust 源代码
 - 检测字段添加、删除、重命名和类型变化
