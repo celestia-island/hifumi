@@ -9,6 +9,9 @@ jobs:
     name: Publish to crates.io
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Release protection lives on the `release` environment; the API token is
+    # still readable at repo level until the next secret rotation moves it in.
+    environment: release
 
     steps:
       - uses: actions/checkout@v7
