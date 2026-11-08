@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod analyze;
+mod compact;
 mod generate;
 
 use analyze::analyze_struct_changes;
@@ -63,6 +64,25 @@ enum Commands {
         #[arg(long, default_value = "HEAD")]
         to_commit: String,
     },
+
+    /// Compact a version chain: drop extinct migrations below a baseline
+    Compact {
+        /// Path to the Rust source file containing the struct
+        #[arg(short, long)]
+        file: String,
+
+        /// Name of the struct to compact
+        #[arg(short, long)]
+        struct_name: String,
+
+        /// Baseline version: versions older than this go extinct
+        #[arg(short, long)]
+        baseline: String,
+
+        /// Rewrite the file in place (default: print to stdout)
+        #[arg(short, long)]
+        write: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -95,6 +115,14 @@ fn main() -> Result<()> {
                 &to_commit,
             )?;
             println!("{}", code);
+        }
+        Commands::Compact {
+            file,
+            struct_name,
+            baseline,
+            write,
+        } => {
+            compact::compact_file(std::path::Path::new(&file), &struct_name, &baseline, write)?;
         }
     }
 

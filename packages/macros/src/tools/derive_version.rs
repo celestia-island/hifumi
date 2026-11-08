@@ -10,6 +10,8 @@ use syn::{
 /// - `#[version]` - 自动使用 `CARGO_PKG_VERSION` 环境变量
 /// - `#[version("0.1", forward)]` / `#[version(forward)]` - 追加前向兼容
 ///   旗标：未知（更新）版本的数据按宽容读者语义解析（见 `hifumi::Forward`）
+/// - `#[version("0.3", baseline = "0.1")]` - 声明压缩底线：比 `0.1` 更老的
+///   版本视为已灭绝，其迁移步与旧结构不再生成（链从 baseline 起算）
 #[derive(Clone)]
 pub struct DeriveVersion {
     /// 版本字符串，如果为 None 则使用 CARGO_PKG_VERSION
@@ -17,6 +19,8 @@ pub struct DeriveVersion {
     /// 前向兼容旗标；开启后生成的 `Deserialize` 对未知 `$version`
     /// 走宽容回退而不是直接报错
     pub forward: bool,
+    /// 压缩底线版本；`None` = 不压缩。只允许出现在 `#[version]` 上。
+    pub baseline: Option<String>,
 }
 
 impl DeriveVersion {
@@ -42,6 +46,7 @@ impl Parse for DeriveVersion {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut version = None;
         let mut forward = false;
+        let mut baseline = None;
 
         while !input.is_empty() {
             // 版本字面量永远以字符串字面量开头；裸标识符只可能是具名旗标
@@ -55,22 +60,33 @@ impl Parse for DeriveVersion {
                 version = Some(input.parse::<syn::LitStr>()?.value());
             } else {
                 let ident: Ident = input.parse()?;
-                if ident != "forward" {
+                if ident == "baseline" {
+                    if baseline.is_some() {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "duplicate `baseline` in #[version(...)]",
+                        ));
+                    }
+                    input.parse::<Token![=]>()?;
+                    let lit: syn::LitStr = input.parse()?;
+                    baseline = Some(lit.value());
+                } else if ident == "forward" {
+                    if forward {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "duplicate `forward` flag in #[version(...)]",
+                        ));
+                    }
+                    forward = true;
+                } else {
                     return Err(syn::Error::new(
                         ident.span(),
                         format!(
-                            "unknown flag `{ident}`; expected `forward` or a version string \
-                             literal"
+                            "unknown flag `{ident}`; expected `forward`, `baseline = \"..\"` \
+                             or a version string literal"
                         ),
                     ));
                 }
-                if forward {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        "duplicate `forward` flag in #[version(...)]",
-                    ));
-                }
-                forward = true;
             }
 
             if input.peek(Token![,]) {
@@ -78,6 +94,10 @@ impl Parse for DeriveVersion {
             }
         }
 
-        Ok(Self { version, forward })
+        Ok(Self {
+            version,
+            forward,
+            baseline,
+        })
     }
 }
