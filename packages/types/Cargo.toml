@@ -21,7 +21,7 @@ default = ["cli"]
 cli = ["dep:clap", "dep:git2", "dep:colored", "dep:syn", "dep:quote", "dep:proc-macro2"]
 
 [dependencies]
-_macros = { path = "../macros", version = "^0.2.0", package = "hifumi-macros" }
+_macros = { path = "../macros", version = "^0.3.0", package = "hifumi-macros" }
 
 anyhow = { workspace = true }
 

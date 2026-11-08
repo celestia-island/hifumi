@@ -110,9 +110,68 @@ let run = set.run_immediate(&mut store); // 执行并记录本地动作
 let pending = set.delegated_pending(&store); // 交给外部执行者
 ```
 
+### 降级写回
+
+迁移可以声明反向方向（`back:` 转换器）；`to_version_value` 随即能把任意旧版本的结构体写成 JSON（含 `$version` 标签）。Add、copy、纯 rename 天然可逆（默认值 / 改回原名）；remove 与带转换器的 rename 需要显式 `back` 表达式：
+
+```rust
+use hifumi::version;
+
+#[version("0.3")]
+#[derive(Debug, Clone, PartialEq)]
+#[migration("0.2" => "0.3" {
+    - legacy: bool { back: level < 2 },
+})]
+struct Config {
+    name: String,
+    level: i32,
+}
+
+let older: serde_json::Value = current.to_version_value("0.2")?;
+```
+
+### 前向兼容
+
+`#[version("0.2", forward)]` 让类型走两段式反序列化：**更新**版本写出的数据（未知 `$version`、未知字段丢弃）按宽容方式解析——已知字段保留——而不是直接报错。不便改定义的类型可以按值包一层 [`Forward<T>`](packages/types/src/forward.rs) 旁路。注册进 `policy: forward` / `policy: full` 注册表的类型必须有该旗标。
+
+### 带编译期策略的注册表
+
+把版本化类型收进注册表，让编译器证明每个类型都满足其注册的策略——不可逆类型出现在 `policy: backward` 里是编译错误，而不是运行期意外。`policy: full` 要求每个注册类型既可逆又带 forward 旗标：
+
+```rust
+mod registry {
+    hifumi::registry! {
+        policy: full {
+            FullDoc,
+            LenientDoc,
+        }
+    }
+}
+
+let spec = registry::spec(); // 类型名、版本链、可逆性、forward 旗标
+```
+
+### 基线与链压缩
+
+`#[version("0.3", baseline = "0.2")]` 把低于基线的版本标记为灭绝：不再生成它们的结构体、`From` 实现与降级步骤，其 JSON 反序列化为未知变体。`hifumi compact` 原地重写源文件、删除灭绝迁移并保留其余字节：
+
+```bash
+hifumi compact -f src/models.rs -s Config --baseline "0.2" --write
+```
+
+### 二进制 wire 通道
+
+`hifumi::wire` 把值封帧为 `b"HIFU"` + `type@version` 的 u32 哈希 + postcard 载荷（**最终**结构体明文，wire 上没有按版本区分的枚举）。宏在每个版本化结构体旁生成 `WireCodec` 实现：
+
+```rust
+let frame: Vec<u8> = hifumi::wire::to_wire(&doc, &Doc::__HIFUMI_META)?;
+let doc: Doc = hifumi::wire::from_wire(&frame, &Doc::__HIFUMI_META)?;
+```
+
 ## 待办事项
 
 - [x] 支持 `specta` 导出 TypeScript 类型。
+- [x] 从 Rust `#[version]` 链导出仅前向的 TypeScript 迁移执行器（`hifumi export-ts`）。
 - [x] 支持 `yuuka`（通过基于 serde 的互操作层）。
 - [x] 版本字段可以自动使用 crate 版本。
 - [x] 从 git 历史自动生成迁移代码。
@@ -182,4 +241,20 @@ hifumi generate -f src/models.rs -s MyStruct \
     - old_field: i32,
     renamed_from => renamed_to: bool,
 })]
+```
+
+### 导出 TypeScript 迁移执行器
+
+`hifumi export-ts` 读取文件里的所有 `#[version]` 结构体，为每个结构体生成一个自包含、零依赖、仅前向的 TypeScript 迁移执行器。`migrate(doc, from, to)` 沿链升级普通 JSON 对象；降级会抛错。带 Rust 转换器的操作、多来源 add、跨类型 rename、`PathBuf` 类字段会被响亮拒绝，而不是导出一个说谎的执行器：
+
+```bash
+hifumi export-ts -f src/models.rs --out migrations.ts
+```
+
+### 压缩版本链
+
+从源文件中删除基线以下的灭绝迁移（见[基线与链压缩](#基线与链压缩)）：
+
+```bash
+hifumi compact -f src/models.rs -s Config --baseline "0.2" --write
 ```

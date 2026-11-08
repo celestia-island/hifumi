@@ -110,6 +110,64 @@ let run = set.run_immediate(&mut store); // executes + records local actions
 let pending = set.delegated_pending(&store); // hand to the external runner
 ```
 
+### Downgrade Writes
+
+Migrations can declare a reverse direction with `back:` converters; `to_version_value` then writes any older version of the struct as JSON (`$version` tag included). Adds, copies, and pure renames are reversible for free; removes and renames with converters need an explicit `back` expression:
+
+```rust
+use hifumi::version;
+
+#[version("0.3")]
+#[derive(Debug, Clone, PartialEq)]
+#[migration("0.2" => "0.3" {
+    - legacy: bool { back: level < 2 },
+})]
+struct Config {
+    name: String,
+    level: i32,
+}
+
+let older: serde_json::Value = current.to_version_value("0.2")?;
+```
+
+### Forward Compatibility
+
+`#[version("0.2", forward)]` opts a type into two-stage deserialization: data written by a **newer** version (unknown `$version`, unknown fields dropped) parses leniently — the known fields are kept — instead of being rejected. For types you cannot redefine, wrap fields or containers in [`Forward<T>`](packages/types/src/forward.rs) to bypass per value.
+
+### Registries with Compile-Time Policies
+
+Collect versioned types into a registry and let the compiler prove each type satisfies the policy it is registered under — a non-reversible type in `policy: backward` is a compile error, not a runtime surprise. `policy: full` requires every registered type to be both reversible and forward:
+
+```rust
+mod registry {
+    hifumi::registry! {
+        policy: full {
+            FullDoc,
+            LenientDoc,
+        }
+    }
+}
+
+let spec = registry::spec(); // type name, version chain, reversible, forward
+```
+
+### Baselines & Chain Compaction
+
+`#[version("0.3", baseline = "0.2")]` marks versions below the baseline as extinct: their structs, `From` impls, and downgrade steps are no longer generated, and their JSON deserializes as an unknown variant. `hifumi compact` rewrites the source file in place to drop extinct migrations while preserving bytes elsewhere:
+
+```bash
+hifumi compact -f src/models.rs -s Config --baseline "0.2" --write
+```
+
+### Binary Wire Channel
+
+`hifumi::wire` frames values as `b"HIFU"` + a u32 hash of `type@version` + a postcard payload of the **final** struct (no per-version enum on the wire). The macro generates a `WireCodec` impl next to every versioned struct:
+
+```rust
+let frame: Vec<u8> = hifumi::wire::to_wire(&doc, &Doc::__HIFUMI_META)?;
+let doc: Doc = hifumi::wire::from_wire(&frame, &Doc::__HIFUMI_META)?;
+```
+
 ## TODO
 
 - [x] Support `specta` for TypeScript type export.
@@ -183,4 +241,20 @@ This will output migration code like:
     - old_field: i32,
     renamed_from => renamed_to: bool,
 })]
+```
+
+### Export a TypeScript migration runner
+
+`hifumi export-ts` reads every `#[version]` struct in a file and emits one self-contained forward-only TypeScript runner per struct (no dependencies). `migrate(doc, from, to)` upgrades a plain JSON object along the chain; downgrades throw. Ops with Rust converters, multi-source adds, type-crossing renames, and `PathBuf`-like types are refused loudly instead of exporting a lying runner:
+
+```bash
+hifumi export-ts -f src/models.rs --out migrations.ts
+```
+
+### Compact a version chain
+
+Drops extinct migrations below a baseline from the source file in place (see [Baselines & Chain Compaction](#baselines--chain-compaction)):
+
+```bash
+hifumi compact -f src/models.rs -s Config --baseline "0.2" --write
 ```
