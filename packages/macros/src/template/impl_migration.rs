@@ -376,6 +376,34 @@ pub(crate) fn step_missing_back(
     None
 }
 
+/// 整条迁移链是否完全可逆：自 final 起按 `to` 逐级回溯（调用方已在
+/// `version` 入口做过环防护），每步先推断旧侧字段表、再用
+/// [`step_missing_back`] 判定；任一步缺反向即 `false`。与
+/// `generate_downgrade_impl` 的 blocked 判定同构：那里首个 Some 之后
+/// 全部臂阻断，这里等价于「存在任一不可逆步」。
+pub(crate) fn chain_reversible(
+    final_version: &str,
+    final_struct_fields: &BTreeMap<Ident, Type>,
+    versions: &[(String, Vec<MigrationField>, String)],
+) -> bool {
+    let mut temp_version = final_version.to_owned();
+    let mut temp_fields = final_struct_fields.clone();
+
+    while let Some(item) = versions.iter().find(|(_, _, to)| to == &temp_version) {
+        let newer_fields = temp_fields.clone();
+        temp_fields = match infer_older_version_struct(temp_fields, item.1.clone()) {
+            Ok(fields) => fields,
+            Err(_) => return false,
+        };
+        if step_missing_back(&item.1, &newer_fields).is_some() {
+            return false;
+        }
+        temp_version = item.0.clone();
+    }
+
+    true
+}
+
 /// 生成「新 → 旧」一步的表达式：一个 block，先对每条带 `back` 的规则求值一次
 /// （back 作用域 = 新结构体全部字段，作为自由标识符传入 helper），再构造旧结构体。
 /// 调用方需先用 [`step_missing_back`] 确认该步可逆。
