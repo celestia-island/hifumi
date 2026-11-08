@@ -5,7 +5,7 @@ edition.workspace = true
 
 publish = true
 description = "A serialization library for migrating data between different versions"
-license = "Apache-2.0"
+license = "LicenseRef-SySL-1.0"
 repository = "https://github.com/celestia-island/hifumi"
 
 [lib]
