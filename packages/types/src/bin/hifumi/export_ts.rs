@@ -399,6 +399,14 @@ fn rename_family(input: ParseStream) -> syn::Result<TsOp> {
             ty_text(&target_ty)
         )));
     }
+    // 自改名（含 `a: A => A` 保名换同型）：Rust 侧是恒等，TS 模板的
+    // set+delete 却会删字段——语义发散，按名拒收。
+    if source == target {
+        return Err(input.error(format!(
+            "`{source}` => `{target}` renames a field to itself; drop the op instead \
+             (the TS runner would silently drop the field)"
+        )));
+    }
     Ok(TsOp::Rename {
         from: source.to_string(),
         to: target.to_string(),

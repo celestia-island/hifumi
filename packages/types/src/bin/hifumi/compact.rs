@@ -347,12 +347,14 @@ pub(crate) fn scan_attr_blocks(source: &str, struct_start: usize) -> Result<Vec<
                 continue;
             }
         }
-        // 2.5) 块注释：光标前以 `*/` 收尾时，回跳到配对的 `/*`
+        // 2.5) 块注释：光标前以 `*/` 收尾时，跳到 ignored_spans 算出的
+        // 该注释区间起点。不用 rfind("/*")——嵌套注释、注释内字符串里的
+        // 内层 `/*` 会让它跳错位置，静默丢掉真结构体（Rust 块注释可嵌套）。
         if trimmed >= 2
             && source.as_bytes()[trimmed - 2] == b'*'
             && source.as_bytes()[trimmed - 1] == b'/'
         {
-            if let Some(open) = source[..trimmed - 2].rfind("/*") {
+            if let Some(&(open, _)) = ignored.iter().find(|&&(a, b)| trimmed > a && trimmed <= b) {
                 cursor = open;
                 continue;
             }
@@ -391,24 +393,73 @@ pub(crate) fn ignored_spans(text: &str) -> Vec<(usize, usize)> {
                 i = end;
             }
             b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                let end = text[i + 2..]
-                    .find("*/")
-                    .map(|p| i + 2 + p + 2)
-                    .unwrap_or(bytes.len());
-                spans.push((i, end));
-                i = end;
+                // 块注释按 Rust 语义嵌套：内部的 `/*`（包括看似字符串字面量
+                // 里的）同样加深一层；未配平则吞到 EOF，与真实词法一致。
+                let mut depth = 1usize;
+                let mut j = i + 2;
+                while j < bytes.len() && depth > 0 {
+                    if bytes[j] == b'*' && bytes.get(j + 1) == Some(&b'/') {
+                        depth -= 1;
+                        j += 2;
+                    } else if bytes[j] == b'/' && bytes.get(j + 1) == Some(&b'*') {
+                        depth += 1;
+                        j += 2;
+                    } else {
+                        j += 1;
+                    }
+                }
+                spans.push((i, j));
+                i = j;
             }
             b'"' => {
-                // 字符串不跨行；行内找不到闭引号就当孤立引号跳过，
-                // 绝不把余下全文吞进 span（会误杀后续真实属性/命中）。
-                let line_end = text[i..].find('\n').map(|p| i + p).unwrap_or(bytes.len());
-                match text[i + 1..line_end].find('"') {
-                    Some(rel) => {
-                        let end = i + 1 + rel + 1;
-                        spans.push((i, end));
-                        i = end;
+                // raw string：向前看 `r` + N 个 `#`（`r` 前不能是标识符字符）。
+                // raw string 可跨行，闭界 = `"` + 同数 `#`；未闭合吞到 EOF。
+                let mut hashes = 0usize;
+                let mut k = i;
+                while k > 0 && bytes[k - 1] == b'#' {
+                    hashes += 1;
+                    k -= 1;
+                }
+                let raw = k > 0
+                    && bytes[k - 1] == b'r'
+                    && (k - 1 == 0 || {
+                        let prev = text[..k - 1].chars().next_back().unwrap();
+                        !(prev.is_alphanumeric() || prev == '_')
+                    });
+                if raw {
+                    let opener = k - 1;
+                    let closer = format!("\"{}", "#".repeat(hashes));
+                    let end = text[i + 1..]
+                        .find(&closer)
+                        .map(|p| i + 1 + p + closer.len())
+                        .unwrap_or(bytes.len());
+                    spans.push((opener, end));
+                    i = end;
+                } else {
+                    // 普通字符串不跨行；闭引号扫描跳过 `\"` 转义。行内
+                    // 没有闭引号 = 孤立引号，只前进 1 字节，绝不把余下
+                    // 全文吞进 span（会误杀后续真实属性/命中）。
+                    let line_end = text[i..].find('\n').map(|p| i + p).unwrap_or(bytes.len());
+                    let mut j = i + 1;
+                    let mut closed = None;
+                    while j < line_end {
+                        if bytes[j] == b'\\' {
+                            j += 2;
+                            continue;
+                        }
+                        if bytes[j] == b'"' {
+                            closed = Some(j + 1);
+                            break;
+                        }
+                        j += 1;
                     }
-                    None => i += 1,
+                    match closed {
+                        Some(end) => {
+                            spans.push((i, end));
+                            i = end;
+                        }
+                        None => i += 1,
+                    }
                 }
             }
             _ => i += 1,

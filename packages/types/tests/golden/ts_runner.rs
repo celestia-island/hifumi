@@ -29,6 +29,9 @@
 pub struct Doc {
     pub content: String,
     pub heading: String,
+    pub pinned: bool,
+    pub label: String,
+    pub echo: String,
 }
 
 #[version("0.9")]

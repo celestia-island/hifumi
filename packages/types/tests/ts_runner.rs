@@ -110,6 +110,14 @@ fn refuses_non_exportable_forms() {
             format!("{head}\n    title: String => name: String {{ __old.title.clone() }},\n{tail}"),
             &["S", "converter"],
         ),
+        (
+            format!("{head}\n    a: u32 => a: u32,\n{tail}"),
+            &["S", "renames a field to itself"],
+        ),
+        (
+            format!("{head}\n    a: u32 => u32,\n{tail}"),
+            &["S", "renames a field to itself"],
+        ),
     ];
     for (i, (source, needles)) in cases.iter().enumerate() {
         let (ok, _stdout, stderr) = run_export(source, &format!("refuse{i}"));
@@ -234,6 +242,58 @@ pub struct Quoted { pub a: u32 }"##,
         !out.contains(r#""0.1""#),
         "decorative version must not leak"
     );
+
+    // 嵌套块注释夹层（Rust 块注释可嵌套）：rfind(`/*`) 会误中内层，
+    // 静默丢结构体——区间查表必须跳到最外层起点
+    let (ok, out, stderr) = run_export(
+        r#"#[version("0.2")]
+/* outer /* nested */ still outer */
+pub struct Nesty { pub a: u32 }"#,
+        "nested-block-comment",
+    );
+    assert!(
+        ok,
+        "nested block comment must not drop the struct: {stderr}"
+    );
+    assert!(out.contains(r#""Nesty""#), "type must be exported: {out}");
+
+    // 跨行 raw string 里的假 DSL：不得产出幻影类型 / 泄漏版本号
+    let (ok, out, stderr) = run_export(
+        r##"const EMBED: &str = r#"
+#[version("9.9")]
+struct Sample { pub a: u32 }
+"#;
+#[version("0.2")]
+pub struct Real { pub a: u32 }"##,
+        "raw-string-embed",
+    );
+    assert!(ok, "raw string must not poison scan: {stderr}");
+    assert!(out.contains(r#""Real""#), "real type must export: {out}");
+    assert!(!out.contains("Sample"), "no phantom type: {out}");
+    assert!(
+        !out.contains("9.9"),
+        "embedded version must not leak: {out}"
+    );
+
+    // 转义引号 + 字符串里的 `/*`：错误配对会让假块注释吞掉后续真结构体
+    let (ok, out, stderr) = run_export(
+        r#"const PATH: &str = "a\"/*b";
+#[version("0.2")]
+pub struct Esc { pub a: u32 }"#,
+        "escaped-quote",
+    );
+    assert!(ok, "escaped quote must not fake a block comment: {stderr}");
+    assert!(out.contains(r#""Esc""#), "type must be exported: {out}");
+
+    // 孤立引号（char 字面量）：行内无闭引号，只跳 1 字节，绝不吞全文
+    let (ok, out, stderr) = run_export(
+        r#"const QUOTE: char = '"';
+#[version("0.2")]
+pub struct Orphan { pub a: u32 }"#,
+        "orphan-quote",
+    );
+    assert!(ok, "orphan quote must not swallow the file: {stderr}");
+    assert!(out.contains(r#""Orphan""#), "type must be exported: {out}");
 }
 
 /// node 冒烟：宿主 node（≥ 22.6，直接 type-strip）执行生成 runner 的
