@@ -3,7 +3,6 @@ pub(crate) mod current_version_struct;
 pub(crate) mod downgrade;
 pub(crate) mod impl_migration;
 pub(crate) mod old_version_structs;
-pub(crate) mod schema_builder;
 
 pub(crate) use app_migrations::generate_app_migrations_module;
 pub(crate) use current_version_struct::generate_current_version_struct;
