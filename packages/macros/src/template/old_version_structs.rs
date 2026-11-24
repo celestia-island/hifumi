@@ -2,9 +2,13 @@ use anyhow::Result;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::BTreeMap;
-use syn::{Ident, Type};
+use syn::{Attribute, Ident, Type};
 
 use crate::{tools::MigrationField, utils::generate_ident};
+
+/// 字段名 → 逐字段透传属性（见 [`crate::tools::Migration::field_passthrough_attrs`]）。
+/// 单字段没有白名单属性时，`get` 落空即不生成任何 attribute。
+pub(crate) type FieldPassthrough = BTreeMap<Ident, Vec<Attribute>>;
 
 pub(crate) fn infer_older_version_struct(
     newer_struct_fields: BTreeMap<Ident, Type>,
@@ -66,6 +70,7 @@ pub(crate) fn generate_old_version_structs(
     final_version: String,
     final_struct_fields: BTreeMap<Ident, Type>,
     extra_macros: Vec<TokenStream>,
+    field_attrs: FieldPassthrough,
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
     let old_version_structs =
@@ -76,7 +81,13 @@ pub(crate) fn generate_old_version_structs(
         .map(|(version, fields)| {
             let struct_name = generate_ident(&ident, version)?;
             let fields = fields.iter().map(|(ident, ty)| {
+                // 字段级透传属性：迁移推断可能把同名标识符换到另一个类型，
+                // 但 `#[serde(default)]`/`rename`/`flatten` 是**名字**的属性，
+                // 与类型无关，因此按名字搬运正确。当期版本的最终结构体落在
+                // `final_version` 那一份（即 `fields` 与源结构体一致的那份）。
+                let attrs = field_attrs.get(ident).map(Vec::as_slice).unwrap_or(&[]);
                 quote! {
+                    #(#attrs)*
                     #ident: #ty,
                 }
             });

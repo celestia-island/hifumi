@@ -82,6 +82,9 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         .expect("Failed to get field ident")
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+    // 字段级透传属性（serde/default 等）——宏自己生成 Serialize/Deserialize，
+    // 用户无法再 derive，故必须由宏把字段属性搬到每一份生成副本上。
+    let field_attrs = input.field_passthrough_attrs();
     let versions = {
         let mut temp_version = version_string.clone();
         let mut ret = vec![];
@@ -153,6 +156,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
                 }
             })
             .collect::<Vec<_>>(),
+        field_attrs.clone(),
         versions.clone(),
     )
     .expect("Failed to generate old version structs");
@@ -191,6 +195,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         input.struct_data.ident.clone(),
         version_string.clone(),
         final_struct_fields,
+        field_attrs,
         versions,
     )
     .expect("Failed to generate current version struct");

@@ -13,7 +13,7 @@ use crate::{
 use self::old_version_structs::generate_old_versions;
 
 use super::impl_migration::chain_reversible;
-use super::old_version_structs;
+use super::old_version_structs::{self, FieldPassthrough};
 
 pub(crate) fn generate_current_version_struct(
     attr: DeriveVersion,
@@ -21,6 +21,7 @@ pub(crate) fn generate_current_version_struct(
     ident: Ident,
     final_version: String,
     final_struct_fields: BTreeMap<Ident, Type>,
+    field_attrs: FieldPassthrough,
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
     let Migration {
@@ -72,6 +73,28 @@ pub(crate) fn generate_current_version_struct(
             #[#key #value]
         }
     });
+
+    // 当前（公开）结构体本身只是数据载体：它在外界看到的 serde 表示由
+    // 下面的 `impl Serialize`/`impl Deserialize` 生成，那是**版本化文档**
+    // 表示（`$version` 标签 + 隐藏 final 明文结构）；明文那份表示只由隐藏
+    // final 结构体承担。公开结构体上带 `#[serde(...)]` 的那批字段，
+    // rustc 既没有可用的 derive 注册该 helper 属性（`cannot find attribute`），
+    // 语义也落在错误的表示上。因此把 serde 属性从公开结构体上摘掉：字段
+    // 属性已经在每一份隐藏结构体（含 final）上生效——透传的意义就是让
+    // 属性在**所有** serde 表示上一一 honoured。非 serde 的白名单属性
+    // （`cfg`/`doc`）照旧留在公开结构体上。
+    //
+    // 自检：透传表必须与最终字段表同键——挪动/改名字段时若侦测到孤儿条目，
+    // 说明 `field_passthrough_attrs` 与 `final_struct_fields` 用了不同的键
+    // 来源，此时静默丢属性比报错危险。
+    debug_assert!(field_attrs
+        .keys()
+        .all(|ident| final_struct_fields.contains_key(ident)));
+    let mut struct_data = struct_data;
+    for field in struct_data.fields.iter_mut() {
+        field.attrs.retain(|attr| !attr.path().is_ident("serde"));
+    }
+    let struct_data = struct_data;
 
     // Generate serialize implementation
 
