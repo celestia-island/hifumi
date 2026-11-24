@@ -1,6 +1,6 @@
 use anyhow::Result;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use std::collections::BTreeMap;
 use syn::{Attribute, Ident, Type};
 
@@ -9,6 +9,37 @@ use crate::{tools::MigrationField, utils::generate_ident};
 /// 字段名 → 逐字段透传属性（见 [`crate::tools::Migration::field_passthrough_attrs`]）。
 /// 单字段没有白名单属性时，`get` 落空即不生成任何 attribute。
 pub(crate) type FieldPassthrough = BTreeMap<Ident, Vec<Attribute>>;
+
+/// 某个旧版本结构体上该字段应当带哪些透传属性。
+///
+/// 只有**同型**才搬运：迁移可以被改写字段的类型（`n: i32 => n: String`
+/// 保名换型），此时旧版本里的 `n` 与当前版本里的 `n` 虽然同名，却是两个
+/// 不同的字段。把 `#[serde(default)]` 盲目搬过去会让旧版本一个本来**必需**
+/// 的字段变成可缺省——损坏的旧数据被静默补默认值再迁移，比编译错误危险
+/// 得多。类型不同 = 不是同一个字段 = 不搬运。
+///
+/// 字段在旧版本里根本不存在（`Add` 规则补出来的新字段）同样不搬运：藏在
+/// 旧结构体上毫无意义。
+fn attrs_for_older_field<'a>(
+    attrs: &'a FieldPassthrough,
+    current_types: &BTreeMap<Ident, Type>,
+    ident: &Ident,
+    older_ty: &Type,
+) -> &'a [Attribute] {
+    let Some(field_attrs) = attrs.get(ident) else {
+        return &[];
+    };
+    // 当前版本里同名且同型才是同一个字段；否则这个属性说的是别人的 schema。
+    let same_field = current_types.get(ident).is_some_and(|current_ty| {
+        current_ty.to_token_stream().to_string() == older_ty.to_token_stream().to_string()
+    });
+
+    if same_field {
+        field_attrs
+    } else {
+        &[]
+    }
+}
 
 pub(crate) fn infer_older_version_struct(
     newer_struct_fields: BTreeMap<Ident, Type>,
@@ -74,18 +105,18 @@ pub(crate) fn generate_old_version_structs(
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
     let old_version_structs =
-        generate_old_versions(final_version.clone(), final_struct_fields, versions)?;
+        generate_old_versions(final_version.clone(), final_struct_fields.clone(), versions)?;
 
     let old_version_structs = old_version_structs
         .iter()
         .map(|(version, fields)| {
             let struct_name = generate_ident(&ident, version)?;
             let fields = fields.iter().map(|(ident, ty)| {
-                // 字段级透传属性：迁移推断可能把同名标识符换到另一个类型，
-                // 但 `#[serde(default)]`/`rename`/`flatten` 是**名字**的属性，
-                // 与类型无关，因此按名字搬运正确。当期版本的最终结构体落在
-                // `final_version` 那一份（即 `fields` 与源结构体一致的那份）。
-                let attrs = field_attrs.get(ident).map(Vec::as_slice).unwrap_or(&[]);
+                // 字段级透传属性只搬到「同名且同型」的字段上，判据见
+                // [`attrs_for_older_field`]。当期版本的最终结构体落在
+                // `final_version` 那一份（`fields` 与源结构体逐字一致），
+                // 因此那里必然全量搬运。
+                let attrs = attrs_for_older_field(&field_attrs, &final_struct_fields, ident, ty);
                 quote! {
                     #(#attrs)*
                     #ident: #ty,

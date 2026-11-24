@@ -38,7 +38,7 @@ A `#[version]` identity is **a string literal, compared verbatim**. It is not pa
 
 - `#[version("0.2")]` and `#[version("0.2.0")]` are **different identities**. Data written as `{"$version":"0.2.0", ...}` does not match a type declared `"0.2"` — it fails as an unknown variant (or is read leniently if the type carries `forward`).
 - Bare `#[version]` takes `CARGO_PKG_VERSION` verbatim, i.e. the **full** `major.minor.patch`. Nothing is trimmed to `major.minor`, so a bare `#[version]` type and a hand-written `#[version("0.1")]` type are different identities even at the same release.
-- Migration hops are `"from" => "to"` string pairs walked by **exact equality** back from the current version. **No ordering is assumed**: `"9.9"` after `"0.1"` works, and so would `"b"` after `"a"` — the chain is positional, not semantic.
+- Migration hops are `"from" => "to"` string pairs walked by **exact equality** back from the current version. **No ordering is assumed**: `"9.9"` after `"0.1"` works, and so would `"b"` after `"a"` — the chain is positional, not semantic. This is about `#[version]`/`#[migration]` identities only; `#[once]`'s `from` bound on app-migration actions is a separate app-level notion.
 - The wire channel hashes `type_name@version` with FNV-1a, so an identity change is a wire-incompatible change.
 
 **Recommendation:** use full semver strings (`"0.1.0"`, `"1.2.3"`) for new chains, so the identity keeps the compatibility shape the version number implies and stays comparable with `CARGO_PKG_VERSION`. Existing chains are under no obligation to change — their identities are already load-bearing in stored data, and rewriting them is a data migration, not a rename.
@@ -56,6 +56,33 @@ struct Config {
     // ...
 }
 ```
+
+### Field Attributes
+
+`#[version]` writes the `Serialize`/`Deserialize` impls itself, so you cannot also `#[derive(Serialize)]` on the struct (E0119). Field-level `#[serde(...)]` attributes stay on the current version's struct and are forwarded by name to the hidden per-version structs, so `#[serde(default)]` works the way you expect:
+
+```rust
+use hifumi::version;
+
+#[version("0.2")]
+#[derive(Debug, Clone, PartialEq)]
+struct Config {
+    name: String,
+    #[serde(default)]
+    retries: u32,
+}
+
+// A payload missing `retries` now parses.
+let config: Config = serde_json::from_str(r#"{"$version":"0.2","name":"a"}"#)?;
+```
+
+Forwarded attributes apply to the **plaintext** representation of each version (the one that carries the fields), which is also what `to_version_value` writes and what the wire channel encodes. Three rules are worth knowing:
+
+- An attribute is forwarded to an older version only when that version's field has the **same name and same type**. A field re-typed across a step (`n: i32 => n: String`) is a different field, and does not inherit the attribute — otherwise `#[serde(default)]` would quietly turn a required old-version field into an optional one.
+- `#[serde(flatten)]` and `#[cfg]` on a field are **rejected with a compile error**. The `$version` tag is an internally tagged enum, so its payload cannot be flattened, and the macro cannot reproduce a cfg set on every per-version struct.
+- Attributes describe the **current** schema. A historical version's wire key is not recoverable from today's source, so a `#[serde(rename)]` added later changes nothing about data already written.
+
+Note that `#[version(.., forward)]` swallows *every* error from the versioned path and falls back to the lenient reader — including "this payload declares a version I know, but it is malformed". See [Forward Compatibility](#forward-compatibility).
 
 ### TypeScript Type Export (specta)
 

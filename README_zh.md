@@ -45,7 +45,8 @@ struct Test {
   的类型与手写 `#[version("0.1")]` 的类型即使在同一发布版本上也是不同身份。
 - 迁移步是 `"from" => "to"` 字符串对，从当前版本起按**精确相等**回溯。**不假设
   任何顺序**：`"0.1"` 之后接 `"9.9"` 可用，`"a"` 之后接 `"b"` 同样可用——链是
-  位置性的，不是语义性的。
+  位置性的，不是语义性的。这条只讲 `#[version]`/`#[migration]` 的身份；
+  `#[once]` 上应用迁移动作的 `from` 下界是另一套应用层概念。
 - wire 通道用 FNV-1a 哈希 `type_name@version`，因此改身份就是改 wire 兼容性。
 
 **建议**：新链一律使用完整 semver 字符串（`"0.1.0"`、`"1.2.3"`），让身份保持
@@ -65,6 +66,43 @@ struct Config {
     // ...
 }
 ```
+
+### 字段属性
+
+`#[version]` 自己写出 `Serialize`/`Deserialize` 实现，因此你不能在结构体上再
+`#[derive(Serialize)]`（E0119）。字段级 `#[serde(...)]` 属性留在当前版本的结构体上，
+并由宏按名字搬运到隐藏的按版本结构体，`#[serde(default)]` 因此按预期生效：
+
+```rust
+use hifumi::version;
+
+#[version("0.2")]
+#[derive(Debug, Clone, PartialEq)]
+struct Config {
+    name: String,
+    #[serde(default)]
+    retries: u32,
+}
+
+// 缺少 retries 的载荷现在可以解析。
+let config: Config = serde_json::from_str(r#"{"$version":"0.2","name":"a"}"#)?;
+```
+
+搬运过去的属性作用在按版本的**明文**表示上（即真正携带字段的那份），
+`to_version_value` 写出的与 wire 通道编码的也是同一份。三条规则值得知道：
+
+- 只有旧版本里**同名且同型**的字段才会继承属性。跨步骤换了类型的字段
+  （`n: i32 => n: String`）是另一个字段，不继承——否则 `#[serde(default)]` 会
+  悄悄把旧版本一个必需字段变成可选。
+- 字段上的 `#[serde(flatten)]` 与 `#[cfg]` 会**以编译错误拒绝**：`$version` 是
+  内部标签枚举，其载荷不能 flatten；而宏无法在每一份按版本结构体上重现同一
+  组 cfg 条件。
+- 属性描述的是**当前** schema。历史版本的 wire 键无法从今天的源码恢复，因此
+  事后补上的 `#[serde(rename)]` 不改变已经写出去的数据。
+
+另注意 `#[version(.., forward)]` 会吞掉版本化路径上的**所有**错误并回退到宽容
+读者——包括「这个载荷声明的版本我认识，但它本身是坏的」。见
+[前向兼容](#前向兼容)。
 
 ### 导出 TypeScript 类型（specta）
 

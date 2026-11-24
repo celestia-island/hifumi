@@ -13,7 +13,7 @@ use crate::{
 use self::old_version_structs::generate_old_versions;
 
 use super::impl_migration::chain_reversible;
-use super::old_version_structs::{self, FieldPassthrough};
+use super::old_version_structs;
 
 pub(crate) fn generate_current_version_struct(
     attr: DeriveVersion,
@@ -21,7 +21,6 @@ pub(crate) fn generate_current_version_struct(
     ident: Ident,
     final_version: String,
     final_struct_fields: BTreeMap<Ident, Type>,
-    field_attrs: FieldPassthrough,
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
     let Migration {
@@ -84,12 +83,26 @@ pub(crate) fn generate_current_version_struct(
     // 属性在**所有** serde 表示上一一 honoured。非 serde 的白名单属性
     // （`cfg`/`doc`）照旧留在公开结构体上。
     //
-    // 自检：透传表必须与最终字段表同键——挪动/改名字段时若侦测到孤儿条目，
-    // 说明 `field_passthrough_attrs` 与 `final_struct_fields` 用了不同的键
-    // 来源，此时静默丢属性比报错危险。
-    debug_assert!(field_attrs
-        .keys()
-        .all(|ident| final_struct_fields.contains_key(ident)));
+    // 透传表按字段名为键，而 Rust 允许 `#[cfg]` 互斥的同名重复字段——那种
+    // 写法在生成副本里会变成字面重复字段（E0124），必须先拒掉，报在字段
+    // 自己的 span 上而不是让生成物报错。
+    let mut seen = std::collections::BTreeSet::new();
+    for field in struct_data.fields.iter() {
+        let Some(ident) = field.ident.as_ref() else {
+            continue;
+        };
+        if !seen.insert(ident.clone()) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "`{ident}` is declared more than once on this struct; \
+                     #[version] generates one struct per version and cannot \
+                     reproduce cfg-disjoint duplicate field names"
+                ),
+            )
+            .into());
+        }
+    }
     let mut struct_data = struct_data;
     for field in struct_data.fields.iter_mut() {
         field.attrs.retain(|attr| !attr.path().is_ident("serde"));

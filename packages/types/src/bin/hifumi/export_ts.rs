@@ -439,9 +439,10 @@ fn parse_back_body(content: ParseStream) -> syn::Result<()> {
 /// 属 Rust 侧，猜一个 TS 值等于换语义）。
 ///
 /// 按**名字最后一段**分类（`Vec<i32>`、`std::collections::HashMap<K, V>`、
-/// `Option<String>` 一律归结到 `Vec`/`HashMap`/`Option`），与宏侧
-/// `<#ty as Default>::default()` 兼容的类型集一致；数组/元组/引用等
-/// 非路径类型没有可投影的结构默认，直接拒绝而不是猜。
+/// `Option<String>` 一律归结到 `Vec`/`HashMap`/`Option`）。这是**结构性投影**，
+/// 不是 `Default` 的等值复制：只对名字最后一段恰好是这几个结构类型的路径成立，
+/// 同名的自定义类型会被当成结构类型处理（宁可接受也不猜）。数组/元组/引用/
+/// 裸 `str` 等非路径类型没有可投影的结构默认，直接拒绝而不是猜。
 fn rust_default(ty: &Type) -> Result<Json> {
     let Type::Path(path) = ty else {
         bail!(
@@ -458,7 +459,7 @@ fn rust_default(ty: &Type) -> Result<Json> {
         .map(|s| s.ident.to_string())
         .unwrap_or_default();
     match ident.as_str() {
-        "String" | "str" => Ok(Json::Str(String::new())),
+        "String" => Ok(Json::Str(String::new())),
         "bool" => Ok(Json::Bool(false)),
         "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128"
         | "isize" | "f32" | "f64" => Ok(Json::Int(0)),
@@ -611,7 +612,9 @@ mod tests {
                 to: "b".into()
             }
         );
-        // 非路径类型（数组）没有可投影的默认值 → 拒绝，而不是猜
+        // 非路径类型（数组）没有可投影的默认值 → 拒绝，而不是猜。
+        // 注意：旧解析器在这一行会先以「expected identifier」失败，所以本断言
+        // 只钉「拒绝」这一事实，不钉具体是哪一层的拒绝。
         let err = one_op("+ grid: [u8; 4]").unwrap_err();
         assert!(err.to_string().contains("cannot express"), "{err}");
     }

@@ -14,6 +14,14 @@ jobs:
     environment: release
 
     steps:
+      # Fail a manual dispatch before touching the checkout or the secret: a
+      # dispatch carries no release tag, so there is no identity to publish under.
+      - name: Refuse a non-tag run
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          echo "::error::publishing requires a v* tag push; a dispatch or a non-release tag carries no release identity"
+          exit 1
+
       # Publish the TAG's tree, never the branch's.
       #
       # The run is triggered by a tag but `actions/checkout` resolves
@@ -30,33 +38,42 @@ jobs:
           fetch-depth: 0
 
       - name: Assert the tag points at this commit
+        # Tag names are collaborator-controlled text; pass them through `env`
+        # rather than interpolating `${{ }}` into the script body.
+        env:
+          TAG_REF: ${{ github.ref }}
+          TAG_NAME: ${{ github.ref_name }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -eu
-          tag_sha=$(git rev-list -n1 "$GITHUB_REF")
-          if [ "$tag_sha" != "$GITHUB_SHA" ]; then
-            echo "::error::tag ${{ github.ref_name }} resolves to $tag_sha, but this run is for $GITHUB_SHA — refusing to publish"
+          # `^{commit}` peels an annotated tag to its commit; lightweight tags
+          # resolve to a commit already. Both tag kinds must land on the commit
+          # this run checked out, otherwise the tree about to be published is
+          # not the tree that was tagged.
+          tag_sha=$(git rev-parse --verify "${TAG_REF}^{commit}")
+          head_sha=$(git rev-parse HEAD)
+          if [ "$tag_sha" != "$head_sha" ]; then
+            echo "::error::tag $TAG_NAME resolves to $tag_sha, but the checked-out commit is $head_sha - refusing to publish"
             exit 1
           fi
-          echo "publishing tree of $tag_sha (${{ github.ref_name }})"
-
-      # A manual dispatch carries no release tag, so the guard above only proves
-      # "the checked-out commit is itself". Refuse to publish from anything that
-      # is not a tag-triggered run — a dispatch must go through a real tag.
-      - name: Refuse a non-tag run
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: |
-          echo "::error::publishing requires a v* tag push; workflow_dispatch carries no release identity"
-          exit 1
+          if [ "$head_sha" != "$TRIGGER_SHA" ]; then
+            echo "::error::checked-out commit $head_sha differs from the triggering $TRIGGER_SHA - refusing to publish"
+            exit 1
+          fi
+          echo "publishing tree of $head_sha ($TAG_NAME)"
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-release
 
-      # This repo gitignores Cargo.lock, so `--locked` cannot be used and the
-      # pre-publish build is the guard that `--no-verify` used to skip.
-      - name: Build the tag's tree before publishing
-        run: cargo check --all-targets --all-features --workspace
+      # Build the two crates that actually ship, not `--workspace`: the e2e
+      # member is `publish = false` and pulls a crates.io dependency the
+      # release job has no business resolving. This repo gitignores
+      # Cargo.lock, so `--locked` is unavailable and the check is not
+      # byte-reproducible — it proves the tag's tree compiles, nothing more.
+      - name: Build the published crates from the tag's tree
+        run: cargo check --all-features -p hifumi-macros -p hifumi
 
       - run: cargo login ${{ secrets.CRATES_IO_API_TOKEN }}
       - run: |-

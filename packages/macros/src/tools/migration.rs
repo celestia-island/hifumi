@@ -16,20 +16,58 @@ pub struct Migration {
     pub struct_data: ItemStruct,
 }
 
-/// 逐字段透传给**每一份**生成副本（隐藏的当期明文结构体 + 各隐藏旧版本
-/// 结构体）的属性白名单。
+/// 逐字段透传给生成副本（隐藏的当期明文结构体 + 各隐藏旧版本结构体）的
+/// 属性白名单。
 ///
-/// 只放行 serde 语义属性：宏自行为每个版本生成了 `Serialize`/`Deserialize`
-/// 实现（所以用户无法再 `#[derive(Serialize)]`，见 E0119），字段级 serde 属性
-/// 因此必须由宏自己搬运——否则 `#[serde(default)]`、`#[serde(rename)]`、
-/// `#[serde(flatten)]` 这类配置会被静默丢弃，或者只落在某一份副本上、
-/// 与迁移链里解析旧数据的隐藏结构体不一致。`cfg`/`doc` 是纯元数据属性，
-/// 不影响编解码，一并透传以免 cargo doc / cfg 行为飘移。
+/// 宏自行为每个版本生成了 `Serialize`/`Deserialize` 实现（所以用户无法再
+/// `#[derive(Serialize)]`，见 E0119），字段级 serde 属性因此必须由宏自己搬运
+/// ——否则 `#[serde(default)]`、`#[serde(rename)]` 这类配置会被静默丢弃，
+/// 或者只落在某一份副本上、与迁移链里解析旧数据的隐藏结构体不一致。
 ///
-/// 刻意**不**透传 `specta`：specta 的字段属性只在类型本身 `#[derive(Type)]`
-/// 时合法，透传到隐藏结构体（未派生 Type）会变成未知属性编译错误。
+/// 表以字段名为键，因此**不是**「按名字无条件搬运」：搬运到旧版本结构体时
+/// 还要同名同型才成立，判据在
+/// [`crate::template::old_version_structs::attrs_for_older_field`]。
+///
+/// 刻意不放行的三类，且都是**显式报错**而不是静默丢弃：
+/// - `cfg`：cfg 会按编译单元裁剪字段，宏无法在生成的历史结构体上重现同一
+///   组 cfg 条件，照搬会造出「public 结构体被裁掉、隐藏结构体还在」的字段集
+///   错位；`doc` 是纯注释、无此问题，照常透传。
+/// - `serde(flatten)`：内部标签枚举（`$version`）的载荷不允许 flatten，
+///   在这里放行等于让用户写一个必然编译失败的属性。
+/// - `specta(...)`：字段级 specta 属性只在类型本身 `#[derive(Type)]` 时合法，
+///   透传到未派生 Type 的隐藏结构体会变成未知属性编译错误。
+fn field_attr_rejection(attr: &Attribute) -> Option<String> {
+    if attr.path().is_ident("cfg") {
+        return Some(
+            "`#[cfg]` on a field of a #[version] struct is not supported: the macro \
+             cannot reproduce the same cfg set on every generated per-version struct"
+                .to_string(),
+        );
+    }
+
+    if !attr.path().is_ident("serde") {
+        return None;
+    }
+
+    let mut rejected = None;
+    let _ = attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("flatten") {
+            rejected = Some(
+                "`#[serde(flatten)]` is not supported on a #[version] struct: the payload \
+                 of the `$version` internally tagged enum cannot be flattened"
+                    .to_string(),
+            );
+        }
+        // 继续吃掉剩余 token，让同名多条目也能完整遍历
+        let _ = meta.value();
+        Ok(())
+    });
+    rejected
+}
+
+/// 放行列表的补集：没有报错原因的字段属性才透传。
 fn is_passthrough_attr(attr: &Attribute) -> bool {
-    attr.path().is_ident("serde") || attr.path().is_ident("cfg") || attr.path().is_ident("doc")
+    attr.path().is_ident("serde") || attr.path().is_ident("doc")
 }
 
 impl Parse for Migration {
@@ -73,13 +111,21 @@ impl Migration {
     /// 只收集白名单内的属性（见 [`is_passthrough_attr`]）；没有白名单属性的
     /// 字段不进表。字段顺序与 `struct_data` 一致，故同一张表可以按字段名
     /// 同时用于当前结构体与隐藏旧版本结构体。
-    pub fn field_passthrough_attrs(&self) -> BTreeMap<Ident, Vec<Attribute>> {
+    ///
+    /// 明确不支持的字段属性在**这里**报错并指到字段自己的 span：静默丢弃
+    /// 会让用户以为 `#[serde(flatten)]` 生效了，而它其实什么也没做。
+    pub fn field_passthrough_attrs(&self) -> syn::Result<BTreeMap<Ident, Vec<Attribute>>> {
         let mut map = BTreeMap::new();
 
         for field in self.struct_data.fields.iter() {
             let Some(ident) = field.ident.as_ref() else {
                 continue;
             };
+            for attr in field.attrs.iter() {
+                if let Some(reason) = field_attr_rejection(attr) {
+                    return Err(syn::Error::new_spanned(attr, reason));
+                }
+            }
             let attrs: Vec<Attribute> = field
                 .attrs
                 .iter()
@@ -92,6 +138,6 @@ impl Migration {
             }
         }
 
-        map
+        Ok(map)
     }
 }
