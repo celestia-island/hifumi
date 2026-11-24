@@ -14,11 +14,49 @@ jobs:
     environment: release
 
     steps:
+      # Publish the TAG's tree, never the branch's.
+      #
+      # The run is triggered by a tag but `actions/checkout` resolves
+      # `github.sha` to the branch tip by default, and the previous recipe
+      # leaned on that: `cargo release publish --allow-branch HEAD` published
+      # whatever `master` said at push time. That is how `v0.2.1` shipped code
+      # `v0.2.0`'s tree never had, and why the published version and the tagged
+      # version could disagree. Pin the checkout to the tag's ref and prove the
+      # release commit is the tagged commit before anything reaches crates.io:
+      # the check fails the job instead of shipping a surprise tarball.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Assert the tag points at this commit
+        run: |
+          set -eu
+          tag_sha=$(git rev-list -n1 "$GITHUB_REF")
+          if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::tag ${{ github.ref_name }} resolves to $tag_sha, but this run is for $GITHUB_SHA — refusing to publish"
+            exit 1
+          fi
+          echo "publishing tree of $tag_sha (${{ github.ref_name }})"
+
+      # A manual dispatch carries no release tag, so the guard above only proves
+      # "the checked-out commit is itself". Refuse to publish from anything that
+      # is not a tag-triggered run — a dispatch must go through a real tag.
+      - name: Refuse a non-tag run
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          echo "::error::publishing requires a v* tag push; workflow_dispatch carries no release identity"
+          exit 1
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-release
+
+      # This repo gitignores Cargo.lock, so `--locked` cannot be used and the
+      # pre-publish build is the guard that `--no-verify` used to skip.
+      - name: Build the tag's tree before publishing
+        run: cargo check --all-targets --all-features --workspace
 
       - run: cargo login ${{ secrets.CRATES_IO_API_TOKEN }}
       - run: |-

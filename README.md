@@ -32,6 +32,17 @@ struct Test {
 
 ## Features
 
+### Version identity
+
+A `#[version]` identity is **a string literal, compared verbatim**. It is not parsed, not normalised, and not ordered:
+
+- `#[version("0.2")]` and `#[version("0.2.0")]` are **different identities**. Data written as `{"$version":"0.2.0", ...}` does not match a type declared `"0.2"` — it fails as an unknown variant (or is read leniently if the type carries `forward`).
+- Bare `#[version]` takes `CARGO_PKG_VERSION` verbatim, i.e. the **full** `major.minor.patch`. Nothing is trimmed to `major.minor`, so a bare `#[version]` type and a hand-written `#[version("0.1")]` type are different identities even at the same release.
+- Migration hops are `"from" => "to"` string pairs walked by **exact equality** back from the current version. **No ordering is assumed**: `"9.9"` after `"0.1"` works, and so would `"b"` after `"a"` — the chain is positional, not semantic.
+- The wire channel hashes `type_name@version` with FNV-1a, so an identity change is a wire-incompatible change.
+
+**Recommendation:** use full semver strings (`"0.1.0"`, `"1.2.3"`) for new chains, so the identity keeps the compatibility shape the version number implies and stays comparable with `CARGO_PKG_VERSION`. Existing chains are under no obligation to change — their identities are already load-bearing in stored data, and rewriting them is a data migration, not a rename.
+
 ### Automatic Version Detection
 
 You can use `#[version]` without arguments to automatically use `CARGO_PKG_VERSION`:
