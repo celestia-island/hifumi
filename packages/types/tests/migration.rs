@@ -440,3 +440,79 @@ fn path_leading_converter_multi_source_with_back() -> Result<()> {
 
     Ok(())
 }
+
+/// 泛型 / 限定路径类型的「无转换器 Add」取该类型的 `Default`。
+///
+/// 旧版生成 `#ty::default()`，对 `Vec<i32>` / `Option<String>` /
+/// `std::collections::HashMap<..>` 会被 rustc 读成比较表达式
+/// （`comparison operators cannot be chained`），整份文件无法编译；生成物
+/// 现为 `<T as Default>::default()`，与字段类型无关。
+#[test]
+fn add_generic_field_defaults() -> Result<()> {
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        + tags: Vec<i32>,
+        + note: Option<String>,
+        + counts: std::collections::HashMap<String, u32>,
+        + grid: [u8; 2],
+    })]
+    struct Test {
+        a: i32,
+        tags: Vec<i32>,
+        note: Option<String>,
+        counts: std::collections::HashMap<String, u32>,
+        grid: [u8; 2],
+    }
+
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.1","a":7}"#)?,
+        Test {
+            a: 7,
+            tags: vec![],
+            note: None,
+            counts: Default::default(),
+            grid: [0, 0],
+        }
+    );
+    // 当前版本照常往返
+    assert_eq!(
+        serde_json::from_str::<Test>(
+            r#"{"$version":"0.2","a":7,"tags":[1,2],"note":"n","counts":{"k":3},"grid":[4,5]}"#
+        )?,
+        Test {
+            a: 7,
+            tags: vec![1, 2],
+            note: Some("n".to_string()),
+            counts: [("k".to_string(), 3)].into_iter().collect(),
+            grid: [4, 5],
+        }
+    );
+
+    Ok(())
+}
+
+/// 限定路径（`std::string::String`）同样只走 `Default`，不再依赖
+/// 「类型令牌能当路径前缀」。
+#[test]
+fn add_qualified_path_field_defaults() -> Result<()> {
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        + note: std::string::String,
+    })]
+    struct Test {
+        a: i32,
+        note: std::string::String,
+    }
+
+    assert_eq!(
+        serde_json::from_str::<Test>(r#"{"$version":"0.1","a":1}"#)?,
+        Test {
+            a: 1,
+            note: String::new()
+        }
+    );
+
+    Ok(())
+}

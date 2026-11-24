@@ -43,10 +43,16 @@ fn generate_older_version_impl(
                         );
                     }
                     None => {
+                        // 无转换器的 Add = 取该类型的 `Default`。必须写成
+                        // 完全限定形式 `<T as Default>::default()`：`#ty::default()`
+                        // 只在 `ty` 是裸标识符路径时成立，`Vec<i32>` / `Option<String>` /
+                        // `std::collections::HashMap<K, V>` 这类带泛型参数或限定路径的
+                        // 类型会被 rustc 读成比较表达式（`comparison operators cannot
+                        // be chained`），而这几类恰恰是最常见的字段类型。
                         struct_fields.insert(
                             key.clone(),
                             quote! {
-                                #key: #ty::default()
+                                #key: <#ty as ::core::default::Default>::default()
                             },
                         );
                     }
