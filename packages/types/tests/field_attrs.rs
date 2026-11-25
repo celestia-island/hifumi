@@ -596,3 +596,111 @@ fn serde_default_is_found_after_a_sibling_entry() -> Result<()> {
 
     Ok(())
 }
+
+/// R19：`Add` 无转换器时补的缺省值，也必须按**字段来源**判定。
+///
+/// 链：`0.1=>0.2 { +n }` 引入的 `n` 在 0.2 就改名成 `k`；今天的 `n` 是
+/// `0.3=>0.4` 才加出来的**另一个**字段。两者同名同型，来源不同。
+///
+/// 旧实现按裸名字取属性，于是 0.2 那一跳给 `k` 补了今天 `n` 的 `seven()`：
+/// `{"$version":"0.1"}` → `Doc { n: 3, k: 7 }`。`k` 该拿 `Default::default()`（0）。
+#[test]
+fn added_field_does_not_inherit_a_namesake_from_another_era() -> Result<()> {
+    fn seven() -> i32 {
+        7
+    }
+    fn three() -> i32 {
+        3
+    }
+
+    #[version("0.4")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.3" => "0.4" { + n: i32 { three() } })]
+    #[migration("0.2" => "0.3" { n: i32 => k: i32 })]
+    #[migration("0.1" => "0.2" { + n: i32 })]
+    struct Doc {
+        #[serde(default = "seven")]
+        n: i32,
+        k: i32,
+    }
+
+    // 0.1 缺 `n`：那一跳加的 `n` 后来变成 `k`，与今天的 `n` 无关 →
+    // `k` 走 Default::default() = 0；今天的 `n` 由 0.4 的转换器给 3。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.1"}"#)?,
+        Doc { n: 3, k: 0 }
+    );
+    // 0.2 那个 `n` 就是后来的 `k`，值照常穿过。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.2","n":5}"#)?,
+        Doc { n: 3, k: 5 }
+    );
+    // 当前版本缺 `n`：属性仍留在自己的字段上。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.4","k":1}"#)?,
+        Doc { n: 7, k: 1 }
+    );
+
+    Ok(())
+}
+
+/// 对照组：字段在 `Add` 之后一路存活、没被改名腾挪时，缺省值**必须**仍用
+/// `serde(default = "..")`。只钉「不给」会让「凡 Add 都用 Default」也通过。
+#[test]
+fn added_field_still_honours_its_default_when_it_survives() -> Result<()> {
+    fn seven() -> i32 {
+        7
+    }
+
+    #[version("0.3")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.2" => "0.3" { + extra: i32 })]
+    #[migration("0.1" => "0.2" { + n: i32 })]
+    struct Doc {
+        #[serde(default = "seven")]
+        n: i32,
+        extra: i32,
+    }
+
+    // `n` 是 0.2 加的，且之后没再动过 → 0.1 载荷缺它时用 seven()。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.1"}"#)?,
+        Doc { n: 7, extra: 0 }
+    );
+
+    Ok(())
+}
+
+/// 设计取舍：字段同时写了 `#[serde(default = "f")]` **和**迁移转换器时，
+/// 迁移路径以**转换器**为准（0.1 载荷得转换器的值），当前路径以 serde 缺省
+/// 为准（0.3 缺字段得 `f()`）。这是有意为之——转换器是显式声明，缺省值只
+/// 负责「没给值」，不该覆盖它——所以两条路径**可以**不同，只有无转换器的那种
+/// 情况是统一的。这条测试钉住这个取舍，免得被当成 bug 再改回去。
+#[test]
+fn explicit_converter_wins_over_serde_default_by_design() -> Result<()> {
+    fn seven() -> i32 {
+        7
+    }
+
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" { + n: i32 { 42 } })]
+    struct Conf {
+        a: i32,
+        #[serde(default = "seven")]
+        n: i32,
+    }
+
+    // 迁移路径：转换器说了算。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.1","a":1}"#)?,
+        Conf { a: 1, n: 42 }
+    );
+    // 当前路径：serde 缺省值说了算。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.2","a":1}"#)?,
+        Conf { a: 1, n: 7 }
+    );
+
+    Ok(())
+}

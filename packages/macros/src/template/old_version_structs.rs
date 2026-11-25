@@ -8,6 +8,19 @@ use crate::{tools::MigrationField, utils::generate_ident};
 
 /// 字段名 → 逐字段透传属性（见 [`crate::tools::Migration::field_passthrough_attrs`]）。
 /// 单字段没有白名单属性时，`get` 落空即不生成任何 attribute。
+///
+/// # 消费方清单（加新消费方前必读）
+///
+/// 这张表按**当前字段名**为键，而「这个名字在别的版本里是不是同一个字段」是
+/// 另一个问题——直接 `attrs.get(..)` 就是在假设答案是「是」。因此所有消费方
+/// 都必须经 [`attrs_for_field_at`] 取属性，它同时把关来源与类型：
+///
+/// 1. `generate_old_version_structs`：给每份隐藏旧版本结构体生成字段时。
+/// 2. `impl_migration::generate_older_version_impl`：`Add` 无转换器时决定补什么
+///    缺省值（`serde(default = "..")` 还是 `Default::default()`）。
+///
+/// 两次事故都出自「漏掉这道关」：R16 是来源判定只比名字，R19 是第 2 个消费方
+/// 按裸名字取值。**再有第三个消费方，也必须走 [`attrs_for_field_at`]。**
 pub(crate) type FieldPassthrough = BTreeMap<Ident, Vec<Attribute>>;
 
 /// 当前版本的字段 `field` 一路回溯到版本 `version` 时，**在那个版本里叫什么**。
@@ -86,28 +99,30 @@ fn field_name_at(
     Some(current)
 }
 
-/// 某个旧版本结构体上该字段应当带哪些透传属性。
+/// 字段 `ident` 在版本 `version` 上应当带哪些透传属性——**唯一**的判定入口。
 ///
-/// 两个条件都成立才搬运：
-/// 1. 沿迁移链回溯到该版本时，字段**还在**，且**名字没变**
-///    （[`field_name_at`] 的终点名 == 今天的名字）。终点名不同说明那一版的
-///    `ident` 是另一个字段（哪怕同名同型），属性搬过去就是说给错的人听。
-/// 2. 它在那里的类型与今天的类型逐 token 相同。
+/// 全仓只有这一处决定「这个字段配不配这些属性」。任何新的消费方都必须走
+/// 这里，不要再直接 `attrs.get(..)`：R19 就是因为另一个消费方（`Add` 无转换器
+/// 时取 `serde(default = "..")`）绕过了判定、按裸名字取值，让一个已经改名为
+/// `k` 的字段偷走了当前字段的 `seven`。
 ///
-/// 条件 1 定的是「是不是同一个字段」，条件 2 是**双保险**：同源之后类型仍可能
-/// 在这一版恰好被改写过（`n: i32 => n: String` 保名换型），那时 schema 已经
-/// 不同，属性同样不该跟着走。反过来说，条件 2 单独成立**不代表**同一字段
-/// （R16 正是两个不同字段同名同型），所以它只能在条件 1 成立之后当补强用。
+/// 判据两步，缺一不可：
+/// 1. **来源**：沿迁移链回溯到 `version`，字段还在，且终点名仍是 `ident`
+///    （[`field_name_at`]）。终点名不同说明那一版叫这个名字的是**另一个**
+///    字段，哪怕同名同型。
+/// 2. **类型**：它在那里的类型与今天的类型逐 token 相同。同源之后类型仍可能
+///    在某一版被改写（`n: i32 => n: String` 保名换型），那时 schema 已不同。
 ///
-/// 两个条件都**偏向不搬**，但「不搬」的后果分两个方向，见调用方注释。
-fn attrs_for_older_field<'a>(
+/// 这一步偏向「不给」，但「不给」的后果分两个方向，见 `generate_old_version_structs`
+/// 里的落点注释。
+pub(crate) fn attrs_for_field_at<'a>(
     attrs: &'a FieldPassthrough,
     current_types: &BTreeMap<Ident, Type>,
     final_version: &str,
     version: &str,
     hops: &[(String, Vec<MigrationField>, String)],
     ident: &Ident,
-    older_ty: &Type,
+    ty_there: &Type,
 ) -> &'a [Attribute] {
     let Some(field_attrs) = attrs.get(ident) else {
         return &[];
@@ -122,7 +137,7 @@ fn attrs_for_older_field<'a>(
     }
 
     let same_type = current_types.get(ident).is_some_and(|current_ty| {
-        current_ty.to_token_stream().to_string() == older_ty.to_token_stream().to_string()
+        current_ty.to_token_stream().to_string() == ty_there.to_token_stream().to_string()
     });
 
     if same_type {
@@ -207,7 +222,7 @@ pub(crate) fn generate_old_version_structs(
             let struct_name = generate_ident(&ident, version)?;
             let fields = fields.iter().map(|(ident, ty)| {
                 // 字段级透传属性只搬到「同源、同名且同型」的字段上，判据见
-                // [`attrs_for_older_field`]。当期版本的最终结构体落在
+                // [`attrs_for_field_at`]。当期版本的最终结构体落在
                 // `final_version` 那一份（`fields` 与源结构体逐字一致），
                 // 因此那里必然全量搬运。
                 //
@@ -219,7 +234,7 @@ pub(crate) fn generate_old_version_structs(
                 //   旧载荷会解析失败（响亮），而生成本该被跳过的键也会出现
                 //   （旧结构体的输出多字段）——这是**旧 schema 被改写**，不是
                 //   「更严格」，应当当作破坏性变更对待。
-                let attrs = attrs_for_older_field(
+                let attrs = attrs_for_field_at(
                     &field_attrs,
                     &final_struct_fields,
                     &final_version,
