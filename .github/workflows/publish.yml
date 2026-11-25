@@ -14,8 +14,11 @@ jobs:
     environment: release
 
     steps:
-      # Fail a manual dispatch before touching the checkout or the secret: a
-      # dispatch carries no release tag, so there is no identity to publish under.
+      # Refuse any run whose ref is not a v* tag — before touching the checkout
+      # or the secret. A workflow_dispatch CAN name a tag as its ref, in which
+      # case it passes this check and is handled exactly like a tag push below;
+      # a dispatch on a branch (the common case) has no release identity and
+      # is refused here.
       - name: Refuse a non-tag run
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
@@ -27,9 +30,10 @@ jobs:
       # On a tag push `github.sha` is the tag's commit and an unpinned checkout
       # resolves to that same ref, so for THAT trigger the old recipe happened
       # to publish the right tree (crates.io 0.2.1 matches tag v0.2.1). The
-      # hazard was `workflow_dispatch`, whose ref is a BRANCH: there the old
-      # recipe would have published whatever that branch said under a version
-      # taken from its own manifest. Two guards now make the tag the only
+      # hazard was a `workflow_dispatch` on a BRANCH: there the old recipe
+      # would have published whatever that branch said under a version taken
+      # from its own manifest. (A dispatch on a v* tag was always correct — it
+      # resolves to the tag — but the old recipe could not tell the two apart.) Two guards now make the tag the only
       # release identity: the refuse step above rejects non-`v*` refs outright,
       # and the checkout is pinned to the tag's ref with a proof that the release
       # commit IS the tagged commit before anything reaches crates.io — the
