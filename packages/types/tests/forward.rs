@@ -225,8 +225,8 @@ fn meta_three_step_chain() {
 /// 看，它与「只有版本定不下来才回退」不可区分：一个声明了已知旧版本、却不符
 /// 那个版本形状的载荷，落到当前版本形状后校验的是**同一份载荷**——让已知版本
 /// 失败的那个字段在那儿依然缺失或依然类型错，无论迁移步骤是加了字段还是删了
-/// 字段（删字段见下方 `Remove` 表）。所以这张表里 forward 与 strict 只在「无 tag」
-/// 和「未知 tag」两行不同。若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，这张表**不会**变红
+/// 字段。所以**这张只加字段的表**里 forward 与 strict 只在「无 tag」和「未知
+/// tag」两行不同；删字段的情形见下方 `Remove` 表——那里边界确实会移动。若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，这张表**不会**变红
 /// ——那正是「不可区分」的含义；要让那种收窄可见，得先有一个当前版本比旧版本
 /// 要求更少的类型，而 `+ field` 迁移语法造不出那种类型。
 #[test]
@@ -277,11 +277,13 @@ fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
     Ok(())
 }
 
-/// 同一张边界表，但迁移步骤是 **`Remove`**（当前版本比旧版本少一个字段）——
-/// 证明「不可区分」不靠「当前版本是超集」：让 0.1 变体失败的是缺 `a`，回落到
-/// 当前版本后 `a` 依然缺，照样 Err。无论步骤加字段还是删字段，结论相同。
+/// 迁移步骤是 **`Remove`** 时，边界确实移动：当前版本比旧版本少要一个字段，
+/// 于是「只缺那个被删字段」的旧版本载荷在 forward 下被接受（回落按当前版本重读，
+/// 不再要求 `c`），strict 下被拒绝（0.1 变体要求 `c`）。这是 forward 唯一
+/// 可观察的宽化：**仅当某步让当前版本比旧版本要求更少时**才会出现——`Add` 步
+/// 永远不会（见上一张表），`Remove` 步会。README 的 forward 注释据此措辞。
 #[test]
-fn forward_boundary_holds_across_a_remove_step_too() -> Result<()> {
+fn forward_widens_observably_only_when_a_step_removed_a_required_field() -> Result<()> {
     #[version("0.2", forward)]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2" {
@@ -306,8 +308,10 @@ fn forward_boundary_holds_across_a_remove_step_too() -> Result<()> {
     };
     //         payload                       forward  strict  why
     for (body, fwd_ok, strict_ok, why) in [
-        (r#"{"$version":"0.1","a":1,"c":9}"#, true,  true,  "the removed field is dropped by the step; both decode"),
-        (r#"{"$version":"0.1","c":9}"#,     false, false, "missing `a`, which BOTH versions require: the fallback re-checks the same payload and fails the same way"),
+        (r#"{"$version":"0.1","a":1,"c":9}"#, true,  true,  "complete old payload: the step drops c; both decode"),
+        // THE discriminating row — the one the README's claim turns on:
+        (r#"{"$version":"0.1","a":1}"#,     true,  false, "old payload missing the REMOVED field: forward re-reads as the current version, which no longer requires c; strict's 0.1 variant still does"),
+        (r#"{"$version":"0.1","c":9}"#,     false, false, "missing a, which BOTH versions require"),
     ] {
         let (f, s) = run(body);
         assert_eq!(f, fwd_ok, "forward  ← {body}  ({why})");
