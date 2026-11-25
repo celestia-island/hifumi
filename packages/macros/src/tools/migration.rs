@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use proc_macro2::TokenStream;
-use quote::ToTokens;
 use syn::{
     bracketed, parenthesized,
     parse::{Parse, ParseStream},
@@ -52,11 +51,10 @@ fn field_attr_rejection(attr: &Attribute) -> Option<String> {
         return None;
     }
 
-    // Token 扫描而不是 `parse_nested_meta`：后者的回调必须自己消费掉每个条目的
-    // token，遇到 `rename(serialize = "x")` 这类嵌套列表时 `meta.value()` 失败、
-    // 遍历就此中断，其后的 `flatten` 便逃过拒绝（实测可复现）。扫描 `Ident` 不会
-    // 误伤字符串里的同名文本——`"flatten"` 是 `Literal` 而不是 `Ident`。
-    if token_stream_mentions_ident(attr.meta.to_token_stream(), "flatten") {
+    // 走全仓唯一的 [`serde_items`] 解析器：只认**裸标记** `flatten`，故
+    // `rename = "flatten"` 这类字符串不会误判；嵌套列表（`rename(serialize = "x")`）
+    // 也照常穿到底，`flatten` 写在其后不会被漏掉。
+    if mentions_flag(&serde_items(attr), "flatten") {
         return Some(
             "`#[serde(flatten)]` is not supported on a #[version] struct: the payload \
              of the `$version` internally tagged enum cannot be flattened"
@@ -66,15 +64,140 @@ fn field_attr_rejection(attr: &Attribute) -> Option<String> {
     None
 }
 
-/// 递归判断一个 token 流里是否出现给定的 `Ident`（`Group` 内部也算）。
+/// `#[serde(...)]` 里的一项。
 ///
-/// 只认 `Ident`：字符串字面量（如 `rename = "flatten"`）是 `Literal`，不会命中。
-fn token_stream_mentions_ident(stream: proc_macro2::TokenStream, needle: &str) -> bool {
-    stream.into_iter().any(|tree| match tree {
-        proc_macro2::TokenTree::Ident(ident) => ident == needle,
-        proc_macro2::TokenTree::Group(group) => token_stream_mentions_ident(group.stream(), needle),
-        _ => false,
+/// 这是全仓**唯一**的 serde 属性解析器：flatten 拒绝与 `default = "path"`
+/// 取值都走它，不再各自手搓一遍。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum SerdeItem {
+    /// 裸标记：`flatten`、`default`。
+    Flag(String),
+    /// `name = "literal"`，第二个字段是字符串**内容**：`rename = "n2"`、
+    /// `default = "seven"`、`skip_serializing_if = "Option::is_none"`。
+    ///
+    /// 存 `String` 而不是 `syn::LitStr`：`LitStr` 的 `Debug`/`PartialEq` 要
+    /// syn 的 `extra-traits` 特性，本 crate 没有开；内容对判定已足够。
+    Named(String, String),
+    /// `name(..)`：`rename(serialize = "x")`、`bound(deserialize = "..")`。
+    Nested(String, Vec<SerdeItem>),
+}
+
+/// 把一条 `#[serde(...)]` 拆成 [`SerdeItem`] 列表。
+///
+/// **递归下降读 token 流**，不用 `syn::parse_nested_meta`：后者的回调必须
+/// 自己把每个条目的 token 消费干净，遇到 `rename(serialize = "x")` 这类嵌套
+/// 列表时 `meta.value()` 会失败、遍历就此中断，其后的条目便永远看不到——
+/// `#[serde(rename = "n2", default = "seven")]` 取不到 `default`、
+/// `rename(serialize = "x"), flatten` 会漏掉 flatten，都是这个形态。手写
+/// 下降对嵌套与条目顺序都不敏感。
+///
+/// 非 `serde` 属性、以及 `#[serde]`（无括号）返回空表。
+pub(crate) fn serde_items(attr: &Attribute) -> Vec<SerdeItem> {
+    if !attr.path().is_ident("serde") {
+        return Vec::new();
+    }
+    let syn::Meta::List(list) = &attr.meta else {
+        return Vec::new();
+    };
+    read_items(list.tokens.clone().into_iter().peekable())
+}
+
+type SerdeStream = std::iter::Peekable<proc_macro2::token_stream::IntoIter>;
+
+/// 读一项：`ident`、`ident = "lit"` 或 `ident ( .. )`。
+fn parse_serde_item(stream: &mut SerdeStream) -> Option<SerdeItem> {
+    // 只在确实拿到 `Ident` 时才前进；遇到逗号之类的分隔符**不动指针**，
+    // 交给调用方跳过。曾经在这里无条件 `next()`，于是分离符被吞掉后
+    // 调用方又多跳一个 token，紧随其后的条目就整条丢了。
+    match stream.peek() {
+        Some(proc_macro2::TokenTree::Ident(_)) => {}
+        _ => return None,
+    }
+    let Some(proc_macro2::TokenTree::Ident(ident)) = stream.next() else {
+        return None;
+    };
+    let name = ident.to_string();
+
+    // `ident ( .. )`：嵌套列表，递归读进一个 `Vec`。
+    if let Some(proc_macro2::TokenTree::Group(group)) = stream.peek() {
+        if group.delimiter() == proc_macro2::Delimiter::Parenthesis {
+            let group = match stream.next() {
+                Some(proc_macro2::TokenTree::Group(g)) => g,
+                _ => return Some(SerdeItem::Flag(name)),
+            };
+            let inner = read_items(group.stream().into_iter().peekable());
+            return Some(SerdeItem::Nested(name, inner));
+        }
+    }
+
+    // `ident = "lit"`：只认等号后紧跟字符串字面量；否则视为裸标记。
+    if let Some(proc_macro2::TokenTree::Punct(punct)) = stream.peek() {
+        if punct.as_char() == '=' {
+            stream.next();
+            if let Some(proc_macro2::TokenTree::Literal(literal)) = stream.peek() {
+                if let Ok(lit) = syn::parse_str::<syn::LitStr>(&literal.to_string()) {
+                    stream.next();
+                    return Some(SerdeItem::Named(name, lit.value()));
+                }
+            }
+            return Some(SerdeItem::Flag(name));
+        }
+    }
+
+    Some(SerdeItem::Flag(name))
+}
+
+/// 唯一的读循环：读得动就收下，读不动就**跳过这个 token 接着读**。
+///
+/// 「跳过而不是停下」是这里的全部要点——一旦提前 `break`，后面的条目就
+/// 永远看不见（这正是 `parse_nested_meta` 行为的形态）。
+fn read_items(mut stream: SerdeStream) -> Vec<SerdeItem> {
+    let mut items = Vec::new();
+    while stream.peek().is_some() {
+        if let Some(item) = parse_serde_item(&mut stream) {
+            items.push(item);
+        } else {
+            stream.next();
+        }
+    }
+    items
+}
+
+/// 递归查找某个名字的**裸标记**（任意层嵌套里）。
+fn mentions_flag(items: &[SerdeItem], needle: &str) -> bool {
+    items.iter().any(|item| match item {
+        SerdeItem::Flag(name) => name == needle,
+        SerdeItem::Named(..) => false,
+        SerdeItem::Nested(_, inner) => mentions_flag(inner, needle),
     })
+}
+
+/// 递归查找某个名字的 `= "literal"` 取值（任意层嵌套里，先到先得）。
+fn find_named<'a>(items: &'a [SerdeItem], needle: &str) -> Option<&'a str> {
+    for item in items {
+        match item {
+            SerdeItem::Named(name, value) if name == needle => return Some(value.as_str()),
+            SerdeItem::Nested(_, inner) => {
+                if let Some(value) = find_named(inner, needle) {
+                    return Some(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 取字段上的 `#[serde(default = "path")]` 的函数路径。
+///
+/// 裸 `#[serde(default)]` 返回 `None`——那是「取 `Default::default()`」的意思。
+/// 每个 `#[serde(...)]` 条目都经 [`serde_items`] 完整解析，故 `default` 写在
+/// `rename` 前面还是后面都一样。
+pub(crate) fn serde_default_path(attrs: &[Attribute]) -> Option<String> {
+    attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("serde"))
+        .find_map(|attr| find_named(&serde_items(attr), "default").map(str::to_owned))
 }
 
 /// 白名单：**只有** serde 与 doc 会被搬运。
@@ -154,5 +277,142 @@ impl Migration {
         }
 
         Ok(map)
+    }
+}
+
+#[cfg(test)]
+mod serde_walker_tests {
+    use super::*;
+
+    fn items(src: &str) -> Vec<SerdeItem> {
+        serde_items(&attr(src))
+    }
+
+    /// `syn::Attribute` 本身不实现 `Parse`，借一个带该属性的 item 把它取出来。
+    fn attr(src: &str) -> Attribute {
+        let mut source = String::from(src);
+        source.push_str("\nfn _holder() {}");
+        let item: syn::ItemFn =
+            syn::parse_str(&source).unwrap_or_else(|e| panic!("{source:?} must parse: {e}"));
+        item.attrs
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("{src} must carry one attribute"))
+    }
+
+    fn flag(name: &str) -> SerdeItem {
+        SerdeItem::Flag(name.to_string())
+    }
+
+    fn named(name: &str, value: &str) -> SerdeItem {
+        SerdeItem::Named(name.to_string(), value.to_string())
+    }
+
+    /// 裸标记。
+    #[test]
+    fn bare_flag() {
+        assert_eq!(items(r#"#[serde(flatten)]"#), vec![flag("flatten")]);
+        assert_eq!(items(r#"#[serde(default)]"#), vec![flag("default")]);
+    }
+
+    /// 嵌套列表之后**还有**条目：这正是 `parse_nested_meta` 会中断、手搓
+    /// 扫描能穿过去的那种形态。
+    #[test]
+    fn nested_list_does_not_truncate_the_walk() {
+        assert_eq!(
+            items(r#"#[serde(rename(serialize = "x"), flatten)]"#),
+            vec![
+                SerdeItem::Nested("rename".to_string(), vec![named("serialize", "x")],),
+                flag("flatten"),
+            ]
+        );
+    }
+
+    /// 字符串里的 `flatten` 不是标记——`rename = "flatten"` 与 `alias = "flatten"`
+    /// 都不得被判定成 flatten。
+    #[test]
+    fn strings_are_not_flags() {
+        for src in [
+            r#"#[serde(rename = "flatten")]"#,
+            r#"#[serde(alias = "flatten")]"#,
+        ] {
+            let parsed = items(src);
+            assert_eq!(parsed.len(), 1, "{src} -> {parsed:?}");
+            assert!(
+                !mentions_flag(&parsed, "flatten"),
+                "{src} must not count as flatten: {parsed:?}"
+            );
+        }
+    }
+
+    /// `default = "path"` 取得到；裸 `default` 取不到（= 用 `Default::default()`）。
+    #[test]
+    fn default_path_forms() {
+        assert_eq!(
+            items(r#"#[serde(default = "one")]"#),
+            vec![named("default", "one")]
+        );
+        assert_eq!(items(r#"#[serde(default)]"#), vec![flag("default")]);
+        assert_eq!(find_named(&items(r#"#[serde(default)]"#), "default"), None);
+        assert_eq!(
+            find_named(&items(r#"#[serde(default = "one")]"#), "default"),
+            Some("one")
+        );
+    }
+
+    /// **顺序无关**：`default` 写在 `rename` 前还是后都必须看得到。
+    ///
+    /// 这是 R16 的原始缺陷——`#[serde(rename = "n2", default = "seven")]`
+    /// 在旧实现下取不到 `default`（遍历在 `rename` 处中断）。
+    #[test]
+    fn order_does_not_matter() {
+        for src in [
+            r#"#[serde(rename = "n2", default = "seven")]"#,
+            r#"#[serde(default = "seven", rename = "n2")]"#,
+        ] {
+            let parsed = items(src);
+            assert_eq!(
+                find_named(&parsed, "default"),
+                Some("seven"),
+                "{src} -> {parsed:?}"
+            );
+            assert_eq!(find_named(&parsed, "rename"), Some("n2"), "{src}");
+        }
+    }
+
+    /// 其它常见取值形态照常读出，且不被误当成标记。
+    #[test]
+    fn other_value_forms() {
+        let skip = items(r#"#[serde(skip_serializing_if = "Option::is_none")]"#);
+        assert_eq!(
+            find_named(&skip, "skip_serializing_if"),
+            Some("Option::is_none")
+        );
+        assert!(!mentions_flag(&skip, "flatten"));
+
+        let with = items(r#"#[serde(with = "m")]"#);
+        assert_eq!(find_named(&with, "with"), Some("m"));
+        assert!(!mentions_flag(&with, "flatten"));
+    }
+
+    /// 非 serde 属性、以及无括号的 `#[serde]` 都返回空表，不 panic。
+    #[test]
+    fn non_serde_attributes_yield_nothing() {
+        assert!(serde_items(&attr("/// hi")).is_empty());
+        assert!(serde_items(&attr("#[serde]")).is_empty());
+    }
+
+    /// flatten 检测走嵌套层：`rename(serialize = "x"), flatten` 必须命中。
+    #[test]
+    fn flatten_is_found_through_nesting() {
+        assert!(mentions_flag(
+            &items(r#"#[serde(rename(serialize = "x"), flatten)]"#),
+            "flatten"
+        ));
+        assert!(mentions_flag(&items(r#"#[serde(flatten)]"#), "flatten"));
+        assert!(!mentions_flag(
+            &items(r#"#[serde(rename = "x")]"#),
+            "flatten"
+        ));
     }
 }

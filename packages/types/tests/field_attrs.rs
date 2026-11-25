@@ -477,3 +477,122 @@ fn bare_serde_default_still_matches_default_default() -> Result<()> {
 
     Ok(())
 }
+
+/// R16 的原始形态：属性的落点必须看**字段身份**，不能只看名字。
+///
+/// 线系：0.3 的 `x` 往回收是 `0.2.w`、再往回是 `0.1.w`；而 0.1 的 `x`
+/// 在链上其实是 0.3 的 `y`。于是 0.1 里那个叫 `x` 的字段与当前版本的 `x`
+/// 只是**同名**，身份毫无关系（类型也恰好都是 i32）。
+///
+/// 只回答「是不是同一个字段」的旧实现会带回一个 bool 再套到同名的旧字段上，
+/// 于是 `{ "$version": "0.1", "w": 5 }` 被读成 `Doc { x: 5, y: 7 }`——那个 7
+/// 就是 `#[serde(default = "seven")]` 漏到了不属于它的字段上。必须报错。
+#[test]
+fn attribute_follows_the_field_not_the_reused_name_across_a_swap() -> Result<()> {
+    fn seven() -> i32 {
+        7
+    }
+
+    #[version("0.3")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.2" => "0.3" { w: i32 => x: i32 })]
+    #[migration("0.1" => "0.2" { x: i32 => y: i32 })]
+    struct Doc {
+        #[serde(default = "seven")]
+        x: i32,
+        y: i32,
+    }
+
+    // 0.1 的 `x` 是必需字段（它是 0.3 的 `y`），缺失必须报错；
+    // 那个 7 不许凭空出现在别人的位置上。
+    let missing = serde_json::from_str::<Doc>(r#"{"$version":"0.1","w":5}"#);
+    assert!(
+        missing.is_err(),
+        "0.1 payload without `x` must not be defaulted: {missing:?}"
+    );
+
+    // 两字段齐备时照常迁移：w -> x，x -> y。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.1","w":5,"x":9}"#)?,
+        Doc { x: 5, y: 9 }
+    );
+
+    // 当前版本缺 `x`：属性仍留在自己的字段上。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.3","y":2}"#)?,
+        Doc { x: 7, y: 2 }
+    );
+
+    Ok(())
+}
+
+/// 改名往返：0.1 的 `x` → 0.2 的 `y` → 0.3 的 `x`，终点名仍是 `x`，
+/// 所以属性**必须**继续继承。这是上一条的对照组——只钉「不搬」会让
+/// 「凡改名都不搬」也能通过。
+#[test]
+fn attribute_survives_a_rename_round_trip() -> Result<()> {
+    #[version("0.3")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.2" => "0.3" { y: i32 => x: i32 })]
+    #[migration("0.1" => "0.2" { x: i32 => y: i32 })]
+    struct Doc {
+        #[serde(default)]
+        x: i32,
+    }
+
+    // 0.1 侧缺 `x` 可被 default 补上：终点名回到了 `x`，仍是同一个字段。
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.1"}"#)?,
+        Doc { x: 0 }
+    );
+    assert_eq!(
+        serde_json::from_str::<Doc>(r#"{"$version":"0.1","x":4}"#)?,
+        Doc { x: 4 }
+    );
+
+    Ok(())
+}
+
+/// R16 的 S2：`default = "path"` 写在 `rename` **之后**也必须被看见。
+///
+/// 旧实现在 `rename` 处中断整条遍历，于是 0.2 侧取到 `seven()`（7）、
+/// 0.1 侧只拿到 `Default::default()`（0）——同一份数据换个 `$version`
+/// 结果就不同。
+#[test]
+fn serde_default_is_found_after_a_sibling_entry() -> Result<()> {
+    fn seven() -> i32 {
+        7
+    }
+
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" { + n: i32 })]
+    struct Conf {
+        a: i32,
+        #[serde(rename = "n2", default = "seven")]
+        n: i32,
+    }
+
+    // 0.2 侧走 serde：7。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.2","a":1}"#)?,
+        Conf { a: 1, n: 7 }
+    );
+    // 0.1 侧走迁移：**同样**是 7，不是 0。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.1","a":1}"#)?,
+        Conf { a: 1, n: 7 }
+    );
+    // rename 仍然生效：旧键 `n` 不再被识别（有 default 兜着，取 7）。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.2","a":1,"n":5}"#)?,
+        Conf { a: 1, n: 7 }
+    );
+    // 新键照常。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.2","a":1,"n2":5}"#)?,
+        Conf { a: 1, n: 5 }
+    );
+
+    Ok(())
+}

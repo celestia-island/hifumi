@@ -90,9 +90,6 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         Ok(attrs) => attrs,
         Err(e) => return e.to_compile_error().into(),
     };
-    {
-        let _ = &field_attrs;
-    }
     let versions = {
         let mut temp_version = version_string.clone();
         let mut ret = vec![];
