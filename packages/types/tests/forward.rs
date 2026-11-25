@@ -228,9 +228,11 @@ fn meta_three_step_chain() {
 /// 所以以同样的方式失败，与「只有版本定不下来才回退」不可区分。因此这张表里
 /// forward 与 strict 只在「无 tag」和「未知 tag」两行不同。
 ///
-/// 等价性破裂的**精确条件**：某步之后，当前版本的要求不再是旧版本要求的超集。
-/// `Remove`、`Rename`（无论目标是否必填）、以及同名字段重定型（`n: i32 =>
-/// n: String`）都会造成这种破裂——见下方两个 `forward_widens_*` 测试。
+/// 等价性破裂的**精确条件**：某步之后，存在一个**符合当前版本形状却不符合旧版本
+/// 形状**的旧载荷。「当前版本要求不再是旧版本的超集」是必要条件而非充分条件——
+/// 收窄重定型（`n: i32 => n: u8`）破坏超集关系，却造不出这样的载荷。`Remove`、
+/// `Rename`（无论目标是否必填）、以及放宽重定型（`n: i32 => n: String`）都会造出
+/// ——见下方两个 `forward_widens_*` 测试。
 /// 若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，**这张表**不会变红；那正
 /// 是「只加字段时不可区分」的含义。
 #[test]
@@ -283,9 +285,9 @@ fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
 
 /// 迁移步骤是 **`Remove`** 时，边界确实移动：当前版本比旧版本少要一个字段，
 /// 于是「只缺那个被删字段」的旧版本载荷在 forward 下被接受（回落按当前版本重读，
-/// 不再要求 `c`），strict 下被拒绝（0.1 变体要求 `c`）。这是 forward 唯一
-/// 可观察的宽化：**仅当某步让当前版本比旧版本要求更少时**才会出现——`Add` 步
-/// 永远不会（见上一张表），`Remove` 步会。README 的 forward 注释据此措辞。
+/// 不再要求 `c`），strict 下被拒绝（0.1 变体要求 `c`）。这是 forward 可观察宽化的
+/// **最清楚形态**；破裂的精确条件是「存在符合当前版本形状却不符合旧版本形状的旧
+/// 载荷」，`Rename` 与放宽重定型也能造出（见再下一张表）。README 的 forward 注释据此措辞。
 #[test]
 fn forward_widens_observably_only_when_a_step_removed_a_required_field() -> Result<()> {
     #[version("0.2", forward)]
