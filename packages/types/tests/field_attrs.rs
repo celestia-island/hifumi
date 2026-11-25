@@ -269,3 +269,37 @@ fn flatten_as_a_string_is_not_a_rejection() -> Result<()> {
 
     Ok(())
 }
+
+/// `#[serde(alias)]` 与 `rename` 走同一条转发路径：字段名与类型未变的历史结构体
+/// 同样带上它。这是 README 推荐「改名后让旧载荷继续可读」的前提——若哪天只有
+/// 当前版本认 `alias`，旧键载荷会重新解析失败，而 README 的说法就成了空话。
+#[test]
+fn serde_alias_rides_the_same_forwarding_as_rename() -> Result<()> {
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2")]
+    struct Conf {
+        #[serde(rename = "id", alias = "a")]
+        a: i32,
+        #[serde(default)]
+        b: i32,
+    }
+
+    // 旧键（改名前写出的载荷）：仍能读。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.1","a":1}"#)?,
+        Conf { a: 1, b: 0 }
+    );
+    // 新键：走迁移链，照常可读。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.1","id":2}"#)?,
+        Conf { a: 2, b: 0 }
+    );
+    // 当前版本两个键都认。
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.2","a":3,"b":4}"#)?,
+        Conf { a: 3, b: 4 }
+    );
+
+    Ok(())
+}
