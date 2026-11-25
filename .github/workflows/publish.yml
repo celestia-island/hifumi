@@ -37,7 +37,15 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Assert the tag points at this commit
+      - name: Assert the tag, the checkout and the trigger agree
+        # Two compares, not one: the checkout follows `${{ github.ref }}`, so
+        # HEAD *is* the tag — the first compare proves HEAD equals the tag the
+        # push named (and catches a tag force-moved after the run started),
+        # the second proves that HEAD is the commit GitHub says triggered this
+        # run. Together: tag == HEAD == github.sha. Without the second, a
+        # mismatch between the checkout and the triggering event would publish
+        # a tree the event never pointed at.
+        #
         # Tag names are collaborator-controlled text; pass them through `env`
         # rather than interpolating `${{ }}` into the script body.
         env:

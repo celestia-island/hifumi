@@ -193,15 +193,25 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     )
     .expect("Failed to generate downgrade impl");
 
-    let current_version_struct = generate_current_version_struct(
+    let current_version_struct = match generate_current_version_struct(
         attr.clone(),
         input.clone(),
         input.struct_data.ident.clone(),
         version_string.clone(),
         final_struct_fields,
         versions,
-    )
-    .expect("Failed to generate current version struct");
+    ) {
+        Ok(output) => output,
+        // 与 `field_passthrough_attrs` 同样的处置：带 span 的宏错误必须以
+        // 编译错误的形式交回 rustc。用 `.expect` 会把它降级成
+        // `custom attribute panicked`，span 丢失、只剩一句 panic message。
+        Err(error) => {
+            let error = error
+                .downcast::<syn::Error>()
+                .unwrap_or_else(|e| syn::Error::new(proc_macro2::Span::call_site(), e));
+            return error.to_compile_error().into();
+        }
+    };
 
     quote! {
         #current_version_struct

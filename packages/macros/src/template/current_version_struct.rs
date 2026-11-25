@@ -83,9 +83,12 @@ pub(crate) fn generate_current_version_struct(
     // 属性在**所有** serde 表示上一一 honoured。非 serde 的白名单属性
     // （`cfg`/`doc`）照旧留在公开结构体上。
     //
-    // 透传表按字段名为键，而 Rust 允许 `#[cfg]` 互斥的同名重复字段——那种
-    // 写法在生成副本里会变成字面重复字段（E0124），必须先拒掉，报在字段
-    // 自己的 span 上而不是让生成物报错。
+    // 透传表按字段名为键，而同名重复字段在生成副本里会变成字面重复字段
+    // （E0124），必须先拒掉，报在字段自己的 span 上而不是让生成物报错。
+    //
+    // 返回 `syn::Result` 而不是 here-then-panic：调用方把错误经
+    // `to_compile_error()` 送出去，用户看到的是字段 span 上的普通编译错误，
+    // 而不是 `custom attribute panicked` 把 span 丢掉。
     let mut seen = std::collections::BTreeSet::new();
     for field in struct_data.fields.iter() {
         let Some(ident) = field.ident.as_ref() else {
@@ -95,9 +98,9 @@ pub(crate) fn generate_current_version_struct(
             return Err(syn::Error::new(
                 ident.span(),
                 format!(
-                    "`{ident}` is declared more than once on this struct; \
-                     #[version] generates one struct per version and cannot \
-                     reproduce cfg-disjoint duplicate field names"
+                    "duplicate field `{ident}` on a #[version] struct: the macro \
+                     generates one struct per version and cannot represent the \
+                     same field name twice"
                 ),
             )
             .into());
