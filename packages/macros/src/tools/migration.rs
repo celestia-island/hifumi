@@ -56,8 +56,10 @@ fn field_attr_rejection(attr: &Attribute) -> Option<String> {
     // 也照常穿到底，`flatten` 写在其后不会被漏掉。
     if mentions_flag(&serde_items(attr), "flatten") {
         return Some(
-            "`#[serde(flatten)]` is not supported on a #[version] struct: the payload \
-             of the `$version` internally tagged enum cannot be flattened"
+            "`#[serde(flatten)]` is not supported on a #[version] struct: hifumi builds \
+             each per-version struct from a static field list, and flatten's dynamic key \
+             set cannot be carried through the migration chain or re-emitted for an older \
+             version (this is a hifumi restriction, not a serde one)"
                 .to_string(),
         );
     }
