@@ -22,7 +22,7 @@ jobs:
       - name: Refuse a non-tag run
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          echo "::error::publishing requires a v* tag push; a dispatch or a non-release tag carries no release identity"
+          echo "::error::publishing requires a run whose ref is a v* tag (a tag push, or a dispatch on such a tag); a branch or a non-v tag carries no release identity"
           exit 1
 
       # Publish the TAG's tree, never the branch's.
@@ -33,7 +33,8 @@ jobs:
       # hazard was a `workflow_dispatch` on a BRANCH: there the old recipe
       # would have published whatever that branch said under a version taken
       # from its own manifest. (A dispatch on a v* tag was always correct — it
-      # resolves to the tag — but the old recipe could not tell the two apart.) Two guards now make the tag the only
+      # resolves to the tag — but the old recipe could not tell the two apart.)
+      # Two guards now make the tag the only
       # release identity: the refuse step above rejects non-`v*` refs outright,
       # and the checkout is pinned to the tag's ref with a proof that the release
       # commit IS the tagged commit before anything reaches crates.io — the
