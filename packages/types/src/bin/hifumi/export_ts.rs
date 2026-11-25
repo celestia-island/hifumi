@@ -23,7 +23,7 @@ use std::path::Path;
 use syn::{
     braced,
     parse::{Parse, ParseStream},
-    token, Ident, Token, TypePath,
+    token, Ident, Token, Type,
 };
 
 use crate::compact::{
@@ -276,13 +276,13 @@ fn field_op(input: ParseStream) -> syn::Result<TsOp> {
         let key = input.parse::<Ident>()?;
         if input.peek(Token![:]) {
             input.parse::<Token![:]>()?;
-            let source_ty = input.parse::<TypePath>()?;
+            let source_ty = input.parse::<Type>()?;
             if input.peek(Token![=>]) {
                 // `+ a: A => b: B`：单源复制（源保留）
                 input.parse::<Token![=>]>()?;
                 let target = input.parse::<Ident>()?;
                 input.parse::<Token![:]>()?;
-                let target_ty = input.parse::<TypePath>()?;
+                let target_ty = input.parse::<Type>()?;
                 if input.peek(token::Brace) {
                     return Err(input
                         .error("copy with a forward converter is Rust-only and not exportable"));
@@ -312,7 +312,7 @@ fn field_op(input: ParseStream) -> syn::Result<TsOp> {
             input.parse::<Token![=>]>()?;
             let target = input.parse::<Ident>()?;
             input.parse::<Token![:]>()?;
-            let _ty = input.parse::<TypePath>()?;
+            let _ty = input.parse::<Type>()?;
             if input.peek(token::Brace) {
                 return Err(
                     input.error("copy with a forward converter is Rust-only and not exportable")
@@ -328,7 +328,7 @@ fn field_op(input: ParseStream) -> syn::Result<TsOp> {
         input.parse::<Token![-]>()?;
         let key = input.parse::<Ident>()?;
         input.parse::<Token![:]>()?;
-        let _ty = input.parse::<TypePath>()?;
+        let _ty = input.parse::<Type>()?;
         if input.peek(token::Brace) {
             let content;
             braced!(content in input);
@@ -353,16 +353,16 @@ fn rename_family(input: ParseStream) -> syn::Result<TsOp> {
     let source = input.parse::<Ident>()?;
     let (source_ty, target, target_ty) = if input.peek(Token![:]) {
         input.parse::<Token![:]>()?;
-        let source_ty = input.parse::<TypePath>()?;
+        let source_ty = input.parse::<Type>()?;
         input.parse::<Token![=>]>()?;
         if input.peek2(Token![:]) {
             // `a: A => b: B`
             let target = input.parse::<Ident>()?;
             input.parse::<Token![:]>()?;
-            (source_ty, target, input.parse::<TypePath>()?)
+            (source_ty, target, input.parse::<Type>()?)
         } else {
             // `a: A => B`：保名换型
-            let target_ty = input.parse::<TypePath>()?;
+            let target_ty = input.parse::<Type>()?;
             (source_ty, source.clone(), target_ty)
         }
     } else {
@@ -370,7 +370,7 @@ fn rename_family(input: ParseStream) -> syn::Result<TsOp> {
         input.parse::<Token![=>]>()?;
         let target = input.parse::<Ident>()?;
         input.parse::<Token![:]>()?;
-        let ty = input.parse::<TypePath>()?;
+        let ty = input.parse::<Type>()?;
         (ty.clone(), target, ty)
     };
 
@@ -437,8 +437,31 @@ fn parse_back_body(content: ParseStream) -> syn::Result<()> {
 
 /// Rust `Default` → JSON 投影；投影不了的类型拒绝（自定义默认值语义
 /// 属 Rust 侧，猜一个 TS 值等于换语义）。
-fn rust_default(ty: &TypePath) -> Result<Json> {
-    let ident = ty
+///
+/// 按**名字最后一段**分类（`Vec<i32>`、`std::collections::HashMap<K, V>`、
+/// `Option<String>` 一律归结到 `Vec`/`HashMap`/`Option`）。这是**结构性投影**，
+/// 不是 `Default` 的等值复制：只对名字最后一段恰好是这几个结构类型的路径成立，
+/// 同名的自定义类型会被当成结构类型处理（宁可接受也不猜）。
+///
+/// 与宏侧 `<#ty as Default>::default()` 的关系**不是「同一类型集」**，两侧各有
+/// 对方没有的成员：这里拒绝 `[u8; 4]` 这类非路径类型与 `PathBuf` 这类没有结构
+/// 默认的路径（宏侧对它们照常调 `Default::default()`，只要求该类型真的实现了
+/// `Default`）；反过来，这里的「按名字最后一段猜」比宏侧的 trait 解析宽松。
+///
+/// 裸 `str` 归到 `String`：`syn` 把 `str` 解析成 `Type::Path`（ident 为 `str`），
+/// 所以它确实会走到这里。注意 `str` 本身不是 `Default`（它是 unsized，只有
+/// `&str`/`&mut str` 实现 `Default`）；这里的映射是 TS 导出器对「字符串形态」
+/// 的投影决定，不是在复述 Rust 的 `Default` 实现。
+fn rust_default(ty: &Type) -> Result<Json> {
+    let Type::Path(path) = ty else {
+        bail!(
+            "cannot express Rust `Default` for type `{}` in the TS runner; use a \
+             structural default (String / bool / number / Vec / Option / map) or keep \
+             this migration in Rust",
+            ty_text(ty)
+        );
+    };
+    let ident = path
         .path
         .segments
         .last()
@@ -461,7 +484,7 @@ fn rust_default(ty: &TypePath) -> Result<Json> {
     }
 }
 
-fn ty_text(ty: &TypePath) -> String {
+fn ty_text(ty: &Type) -> String {
     ty.to_token_stream().to_string()
 }
 
@@ -552,6 +575,70 @@ mod tests {
             TsOp::Rename {
                 from: "title".into(),
                 to: "name".into()
+            }
+        );
+    }
+
+    /// 泛型 / 限定路径类型：默认值投影按**名字最后一段**分类，故
+    /// `Vec<i32>` 与 `std::vec::Vec<i32>` 等价。只钉分类与投影这一层：
+    /// 这里的解析器本来就吃 `Vec<i32>`（`TypePath` 子集自始支持），
+    /// 旧版报 `comparison operators cannot be chained` 的是**宏侧**把
+    /// 迁移类型 `#ty::default()` 拼进 `+` 表达式，与本函数无关。
+    #[test]
+    fn generic_and_qualified_types_classify() {
+        assert_eq!(
+            one_op("+ tags: Vec<i32>").unwrap(),
+            TsOp::Add {
+                field: "tags".into(),
+                default: Json::Arr
+            }
+        );
+        assert_eq!(
+            one_op("+ extra: Option<String>").unwrap(),
+            TsOp::Add {
+                field: "extra".into(),
+                default: Json::Null
+            }
+        );
+        assert_eq!(
+            one_op("+ counts: std::collections::HashMap<String, u32>").unwrap(),
+            TsOp::Add {
+                field: "counts".into(),
+                default: Json::Obj
+            }
+        );
+        assert_eq!(
+            one_op("+ m: BTreeMap<K, V>").unwrap(),
+            TsOp::Add {
+                field: "m".into(),
+                default: Json::Obj
+            }
+        );
+        // 复制/改名两侧都是泛型时也按 token 文本比对同型
+        assert_eq!(
+            one_op("+ a: Vec<i32> => b: Vec<i32>").unwrap(),
+            TsOp::Copy {
+                from: "a".into(),
+                to: "b".into()
+            }
+        );
+        // 非路径类型（数组）没有可投影的默认值 → 拒绝，而不是猜。
+        // 这是本层自己的拒绝：`one_op` 直接走 `syn::parse_str`，不经宏，
+        // 故钉的就是 `rust_default` 的 `Type::Path` 前置条件。
+        let err = one_op("+ grid: [u8; 4]").unwrap_err();
+        assert!(err.to_string().contains("cannot express"), "{err}");
+    }
+
+    /// 裸 `str` 归到空串：`syn` 把 `str` 解析成 `Type::Path`（ident `str`），
+    /// 所以它确实会走到 `rust_default`。（这是导出器的投影决定——`str` 本身
+    /// 不是 `Default`，unsized。）
+    #[test]
+    fn bare_str_projects_to_the_empty_string() {
+        assert_eq!(
+            one_op("+ note: str").unwrap(),
+            TsOp::Add {
+                field: "note".into(),
+                default: Json::Str(String::new())
             }
         );
     }

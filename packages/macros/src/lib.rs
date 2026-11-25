@@ -82,6 +82,14 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         .expect("Failed to get field ident")
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+    // 字段级透传属性（serde/default 等）——宏自己生成 Serialize/Deserialize，
+    // 用户无法再 derive，故必须由宏把字段属性搬到每一份生成副本上。
+    // 只有 `cfg` 与 `serde(flatten)` 会在这里变成编译错误；其余不在白名单里的
+    // 属性（如 `specta(...)`）被**静默丢弃**，既不透传也不报错。
+    let field_attrs = match input.field_passthrough_attrs() {
+        Ok(attrs) => attrs,
+        Err(e) => return e.to_compile_error().into(),
+    };
     let versions = {
         let mut temp_version = version_string.clone();
         let mut ret = vec![];
@@ -153,6 +161,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
                 }
             })
             .collect::<Vec<_>>(),
+        field_attrs.clone(),
         versions.clone(),
     )
     .expect("Failed to generate old version structs");
@@ -174,6 +183,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         version_string.clone(),
         final_struct_fields.clone(),
         retained_migrations.clone(),
+        &field_attrs,
     )
     .expect("Failed to generate impl froms");
 
@@ -185,15 +195,25 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
     )
     .expect("Failed to generate downgrade impl");
 
-    let current_version_struct = generate_current_version_struct(
+    let current_version_struct = match generate_current_version_struct(
         attr.clone(),
         input.clone(),
         input.struct_data.ident.clone(),
         version_string.clone(),
         final_struct_fields,
         versions,
-    )
-    .expect("Failed to generate current version struct");
+    ) {
+        Ok(output) => output,
+        // 与 `field_passthrough_attrs` 同样的处置：带 span 的宏错误必须以
+        // 编译错误的形式交回 rustc。用 `.expect` 会把它降级成
+        // `custom attribute panicked`，span 丢失、只剩一句 panic message。
+        Err(error) => {
+            let error = error
+                .downcast::<syn::Error>()
+                .unwrap_or_else(|e| syn::Error::new(proc_macro2::Span::call_site(), e));
+            return error.to_compile_error().into();
+        }
+    };
 
     quote! {
         #current_version_struct

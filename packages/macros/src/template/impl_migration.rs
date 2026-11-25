@@ -6,15 +6,20 @@ use std::collections::BTreeMap;
 use syn::{Ident, Type};
 
 use crate::{
-    tools::{MigrationComment, MigrationField},
+    tools::{serde_default_path, MigrationComment, MigrationField},
     utils::generate_ident,
 };
 
-use super::old_version_structs::infer_older_version_struct;
+use super::old_version_structs::{infer_older_version_struct, FieldPassthrough};
 
 fn generate_older_version_impl(
     old_struct_fields: BTreeMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
+    field_attrs: &FieldPassthrough,
+    current_types: &BTreeMap<Ident, Type>,
+    final_version: &str,
+    version: &str,
+    hops: &[(String, Vec<MigrationField>, String)],
 ) -> Result<BTreeMap<Ident, TokenStream>> {
     let mut struct_fields = old_struct_fields
         .keys()
@@ -43,10 +48,50 @@ fn generate_older_version_impl(
                         );
                     }
                     None => {
+                        // 无转换器的 Add = 该字段的 serde 缺省值。字段上如果
+                        // 写了 `#[serde(default = "path")]`，缺省值就是 `path()`。
+                        // 对没有实现 `Default` 的类型（`NonZeroU32`、`PathBuf`…），
+                        // 这是唯一写得出来的形式。
+                        //
+                        // 统一的范围要说清：**只有「无转换器」这一种情况**两条路
+                        // 才一致（0.2 缺字段与 0.1 迁移过来都取 `path()`）。字段
+                        // 若同时写了 `#[serde(default = "f")]` **和**转换器，则
+                        // 迁移路径以**转换器**为准、当前路径以 serde 缺省为准，
+                        // 两条路给出的值**可以不同**——转换器是显式声明，缺省值只
+                        // 负责「没给值」，不该盖过它。这是有意的取舍，由
+                        // `explicit_converter_wins_over_serde_default_by_design` 钉住。
+                        //
+                        // **必须走 [`attrs_for_field_at`] 的唯一判定入口**，不能按
+                        // 裸名字取属性：这个 Add 引入的字段未必是今天那个字段。
+                        // R19 的链 `0.1=>0.2 {+n}` / `0.2=>0.3 {n => k}` /
+                        // `0.3=>0.4 {+n}` 里，0.2 新加的 `n` 在 0.3 就改名成 `k`，
+                        // 今天的 `n` 是 0.4 才加的**另一个**字段——按名字取值会让
+                        // `k` 偷走今天 `n` 的 `seven`（实测 `{k: 7, n: 3}`）。
+                        // 判定点是「这一跳的 `to` 侧，`key` 是否仍是今天的 `key`」，
+                        // 上面那条链在 0.3 处返回 `None`，于是走 `Default::default()`。
+                        //
+                        // 裸 `#[serde(default)]` 仍走 `Default::default()`：那正是
+                        // 它的语义。写成完全限定形式而不是 `#ty::default()`——
+                        // 后者只在 `ty` 是没有泛型实参的单段路径时成立，
+                        // `Vec<i32>` / `Option<String>` 会被读成比较表达式。
+                        let gate_attrs = field_attrs.attrs_for_field_at(
+                            current_types,
+                            final_version,
+                            version,
+                            hops,
+                            key,
+                            ty,
+                        );
+                        let default_value = serde_default_path(gate_attrs)
+                            .and_then(|value| syn::parse_str::<syn::Path>(&value).ok())
+                            .map(|path| quote! { #path() })
+                            .unwrap_or_else(
+                                || quote! { <#ty as ::core::default::Default>::default() },
+                            );
                         struct_fields.insert(
                             key.clone(),
                             quote! {
-                                #key: #ty::default()
+                                #key: #default_value
                             },
                         );
                     }
@@ -196,10 +241,16 @@ pub(crate) fn generate_impl_froms(
     final_version: String,
     final_struct_fields: BTreeMap<Ident, Type>,
     versions: Vec<MigrationComment>,
+    field_attrs: &FieldPassthrough,
 ) -> Result<TokenStream> {
     let mut temp_struct_fields = final_struct_fields.to_owned();
     let mut temp_version = final_version.clone();
     let mut impl_froms = vec![];
+    // 来源判定的输入：每个保留下来的 hop 的 (from, changes, to)。
+    let hops = versions
+        .iter()
+        .map(|item| (item.from.value(), item.changes.clone(), item.to.value()))
+        .collect::<Vec<_>>();
     // Audit hifumi-R1-1: same cycle guard as the version() macro walk —
     // a DSL self-loop/2-cycle would loop here forever.
     let mut visited = std::collections::HashSet::new();
@@ -225,8 +276,15 @@ pub(crate) fn generate_impl_froms(
             generate_ident(&ident, item.to.value())?
         };
 
-        let temp_struct_impl =
-            generate_older_version_impl(temp_struct_fields.clone(), item.changes.clone())?;
+        let temp_struct_impl = generate_older_version_impl(
+            temp_struct_fields.clone(),
+            item.changes.clone(),
+            field_attrs,
+            &final_struct_fields,
+            &final_version,
+            &item.to.value(),
+            &hops,
+        )?;
         let temp_struct_impl_nearly = temp_struct_impl.values();
 
         impl_froms.push(quote! {

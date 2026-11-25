@@ -14,11 +14,81 @@ jobs:
     environment: release
 
     steps:
+      # Refuse any run whose ref is not a v* tag — before touching the checkout
+      # or the secret. A workflow_dispatch CAN name a tag as its ref, in which
+      # case it passes this check and is handled exactly like a tag push below;
+      # a dispatch on a branch (the common case) has no release identity and
+      # is refused here.
+      - name: Refuse a non-tag run
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          echo "::error::publishing requires a run whose ref is a v* tag (a tag push, or a dispatch on such a tag); a branch or a non-v tag carries no release identity"
+          exit 1
+
+      # Publish the TAG's tree, never the branch's.
+      #
+      # On a tag push `github.sha` is the tag's commit and an unpinned checkout
+      # resolves to that same ref, so for THAT trigger the old recipe happened
+      # to publish the right tree (crates.io 0.2.1 matches tag v0.2.1). The
+      # hazard was a `workflow_dispatch` on a BRANCH: there the old recipe
+      # would have published whatever that branch said under a version taken
+      # from its own manifest. (A dispatch on a v* tag was always correct — it
+      # resolves to the tag — but the old recipe could not tell the two apart.)
+      # Two guards now make the tag the only
+      # release identity: the refuse step above rejects non-`v*` refs outright,
+      # and the checkout is pinned to the tag's ref with a proof that the release
+      # commit IS the tagged commit before anything reaches crates.io — the
+      # check fails the job instead of shipping a surprise tarball.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Assert the tag, the checkout and the trigger agree
+        # Two compares. With `ref: ${{ github.ref }}` the local tag and HEAD come
+        # out of the same fetch, so the first compare (tag vs HEAD) is largely
+        # tautological against a corrupted checkout — what it really proves is
+        # that the ref we were handed peels to a commit at all. The load-bearing
+        # one is the **second**: HEAD vs `github.sha`. That is what catches a tag
+        # force-moved after the run started, or a checkout that drifted from the
+        # triggering event, and it is why both are kept.
+        #
+        # Tag names are collaborator-controlled text; pass them through `env`
+        # rather than interpolating `${{ }}` into the script body.
+        env:
+          TAG_REF: ${{ github.ref }}
+          TAG_NAME: ${{ github.ref_name }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          # `^{commit}` peels an annotated tag to its commit; lightweight tags
+          # resolve to a commit already. Both tag kinds must land on the commit
+          # this run checked out, otherwise the tree about to be published is
+          # not the tree that was tagged.
+          tag_sha=$(git rev-parse --verify "${TAG_REF}^{commit}")
+          head_sha=$(git rev-parse HEAD)
+          if [ "$tag_sha" != "$head_sha" ]; then
+            echo "::error::tag $TAG_NAME resolves to $tag_sha, but the checked-out commit is $head_sha - refusing to publish"
+            exit 1
+          fi
+          if [ "$head_sha" != "$TRIGGER_SHA" ]; then
+            echo "::error::checked-out commit $head_sha differs from the triggering $TRIGGER_SHA - refusing to publish"
+            exit 1
+          fi
+          echo "publishing tree of $head_sha ($TAG_NAME)"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-release
+
+      # Build the two crates that actually ship, not `--workspace`: the e2e
+      # member is `publish = false` and pulls a crates.io dependency the
+      # release job has no business resolving. This repo gitignores
+      # Cargo.lock, so `--locked` is unavailable and the check is not
+      # byte-reproducible — it proves the tag's tree compiles, nothing more.
+      - name: Build the published crates from the tag's tree
+        run: cargo check --all-features -p hifumi-macros -p hifumi
 
       - run: cargo login ${{ secrets.CRATES_IO_API_TOKEN }}
       - run: |-

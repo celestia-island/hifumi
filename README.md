@@ -32,6 +32,18 @@ struct Test {
 
 ## Features
 
+### Version identity
+
+A `#[version]` identity is **a string literal, compared verbatim**. It is not parsed, not normalised, and not ordered:
+
+- `#[version("0.2")]` and `#[version("0.2.0")]` are **different identities**. Data written as `{"$version":"0.2.0", ...}` does not match a type declared `"0.2"` — it fails as an unknown variant (or is read leniently if the type carries `forward`).
+- Bare `#[version]` takes `CARGO_PKG_VERSION` verbatim, i.e. the **full** `major.minor.patch`. Nothing is trimmed to `major.minor`, so a bare `#[version]` type and a hand-written `#[version("0.1")]` type are different identities even at the same release.
+- Migration hops are `"from" => "to"` string pairs walked by **exact equality** back from the current version. **The chain assumes no ordering**: it is positional, not semantic, and it follows `to == current` backwards, so the step versions must actually join up. A hop that does not connect is not "out of order", it is unreachable — `"0.2"` with a `"0.1" => "9.9"` step has no `"9.9"` step at all, so `"0.1"` is simply not in the chain (`to_version_value("0.1")` reports `UnknownTarget`).
+- **`hifumi::app` actions order differently and will not tolerate words.** `compare_versions` (used by `#[once(...)]`'s `from => since` bound) splits on `.` and, per segment, takes the **leading ASCII-digit run** and compares that as a number — everything after the digits is ignored, so `"0.5.2-beta" == "0.5.2"`. A segment with **no** leading digits yields `0`. So `"a"` and `"b"` both become `0` and compare `Equal`, which means an action bounded `"alpha" => "beta"` is never due. Numeric versions order fine (`"0.1"` vs `"9.9"` → `Less`); **use numeric identities if you gate `#[once]` on version strings.**
+- The wire channel hashes `type_name@version` with FNV-1a, so an identity change is a wire-incompatible change.
+
+**Recommendation:** use full semver strings (`"0.1.0"`, `"1.2.3"`) for new chains, so the identity keeps the compatibility shape the version number implies and stays comparable with `CARGO_PKG_VERSION`. Existing chains are under no obligation to change — their identities are already load-bearing in stored data, and rewriting them is a data migration, not a rename.
+
 ### Automatic Version Detection
 
 You can use `#[version]` without arguments to automatically use `CARGO_PKG_VERSION`:
@@ -45,6 +57,35 @@ struct Config {
     // ...
 }
 ```
+
+### Field Attributes
+
+`#[version]` writes the `Serialize`/`Deserialize` impls itself, so you cannot also `#[derive(Serialize)]` on the struct (E0119). Field-level `#[serde(...)]` attributes stay on your source struct and are forwarded by name to the hidden per-version structs (the public struct has them stripped, since only the generated representations are serialized), so `#[serde(default)]` works the way you expect:
+
+```rust
+use hifumi::version;
+
+#[version("0.2")]
+#[derive(Debug, Clone, PartialEq)]
+struct Config {
+    name: String,
+    #[serde(default)]
+    retries: u32,
+}
+
+// A payload missing `retries` now parses.
+let config: Config = serde_json::from_str(r#"{"$version":"0.2","name":"a"}"#)?;
+```
+
+Forwarded attributes apply to the **plaintext** representation of each version (the one that carries the fields), which is also what `to_version_value` writes and what the wire channel encodes. Four rules are worth knowing:
+
+- An attribute is forwarded to an older version only when that version's field is **the same field, still under the same name, with the same type** — and "the same field" is decided by **provenance**, not by the name: the macro walks the migration chain back from the current version and follows renames, so a name that was reused by a later `Add` is a different field and does not inherit. A field re-typed across a step (`n: i32 => n: String`) is likewise a different schema and does not inherit — otherwise `#[serde(default)]` would quietly turn a required old-version field into an optional one. Two properties of the type check are worth knowing: it compares against the **current** type for every older version (not hop by hop), and it compares type **text**, so a field unchanged for several versions stops inheriting the moment it changes type at any later hop, and `Vec<T>` written as `std::vec::Vec<T>` counts as a different type. *The type check* fails in the safe direction — a withheld attribute merely leaves the old field required. (That safety claim covers the type comparison only; name reuse is handled by the provenance walk. Its one residual: a hop that renames **overlapping** fields — a swap like `a => b, b => a` — cannot be written at all, because the inferred older struct collapses and the code fails to compile (`E0063`). Renaming two **disjoint** fields in one hop is fine and the walk handles it.)
+- `#[serde(flatten)]` and `#[cfg]` on a field are **rejected with a compile error**, for two hifumi-specific reasons rather than serde limitations. Flatten captures a *dynamic* key set, while every per-version struct here is built from a static field list — so a flattened payload could not be carried through the migration chain or re-emitted for an older version. `cfg` would need the same cfg set reproduced on each generated per-version struct, which the macro cannot do.
+- Attributes describe the **current** schema, and they are forwarded by name to the hidden per-version structs — so a `#[serde(rename)]` added later applies to **every** version the field keeps its name and type in, including ones already on disk. A payload written before the rename carries the old key, so that key is no longer **recognised**. If the field has no default the payload then fails to parse (usually `missing field`); **if the field also carries `#[serde(default)]` (or `default = "path"`) it parses fine and the old value is silently replaced by that default** — rename + default together discard old data without a word. Use `#[serde(alias = "old_key")]` alongside the rename when old payloads must keep loading; `alias` is a `serde` attribute, so it is forwarded the same way.
+- **A converter beats `#[serde(default = "…")]`.** When a field is added by a step that declares a converter (`+ n: i32 { compute_it() }`), the migration uses the converter; a `#[serde(default = "f")]` on the same field only applies on the *current* version's own deserialization path. So the same logical "value absent" can yield the converter's value for an older payload and `f()` for a current one. That precedence is deliberate — an explicit converter should not be overridden by a fallback — but it is a real asymmetry, so prefer one mechanism per field.
+- **One consequence for `specta`-derived TypeScript:** the `serde` attributes are removed from the public struct (only the generated per-version structs are serialized), so a `#[derive(Type)]` on your struct no longer sees `#[serde(rename = "...")]`. The exported TS key is then the Rust field name, not the JSON key. If you export types to TS, give the field the wire name directly, or account for the difference in the consumer.
+
+Note that `#[version(.., forward)]` changes *which* payloads parse, not whether a payload is well-formed. Mechanically the fallback fires on **any** failed versioned decode (`Err(_)` in the generated `Deserialize`), then re-reads the payload as the current version: unknown fields are dropped and the version tag is ignored. For an **`Add`-only chain** that is observably the same as "only when the version cannot be resolved" — a payload naming a known version that fails that version's shape falls through to the current version's shape, which requires everything the known version did and more, so it fails the same way. It is **not** the same once any step lets an old payload match the current version's shape without matching its own: after `Remove` (`- c: i32`, an old payload omitting `c`), after a `Rename` (an old payload already carrying the new name, whether or not the target is required), or after a same-name re-type (`n: i32 => n: String`, an old payload whose `n` is already a string) — such a payload is **accepted** under `forward` (re-read as the current version) and rejected without it. A payload missing a field the current version still requires fails both ways. That is the one observable widening `forward` performs — if your chain removes, renames or re-types fields, a payload that already fits the new shape but not the old one is read as the current version instead of reported. Not tolerated either way: a wrong-typed known field reports `invalid type: string "not-an-int", expected i32` even under an unknown tag, and a field the current version requires still reports `missing field`. See [Forward Compatibility](#forward-compatibility).
 
 ### TypeScript Type Export (specta)
 

@@ -1,10 +1,160 @@
 use anyhow::Result;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use std::collections::BTreeMap;
-use syn::{Ident, Type};
+use syn::{Attribute, Ident, Type};
 
 use crate::{tools::MigrationField, utils::generate_ident};
+
+/// 字段名 → 逐字段透传属性（由 [`crate::tools::Migration::field_passthrough_attrs`]
+/// 构造）。
+///
+/// # 唯一的读取入口是 [`FieldPassthrough::attrs_for_field_at`]
+///
+/// 内部映射按**当前字段名**为键，而「这个名字在别的版本里还是不是同一个字段」
+/// 是另一个问题——裸名字取值等于假设答案是「是」。因此映射是**私有的**，本类型
+/// 没有、也不提供 `get(&Ident)` 这类按名字直取的接口：**这条规则由类型强制，
+/// 不再只靠约定**。要读属性只有一条路，它同时把关来源与类型。
+///
+/// 现有消费方（都经 `attrs_for_field_at`）：
+/// 1. `generate_old_version_structs`：给每份隐藏旧版本结构体生成字段时。
+/// 2. `impl_migration::generate_older_version_impl`：`Add` 无转换器时决定补什么
+///    缺省值（`serde(default = "..")` 还是 `Default::default()`）。
+///
+/// 两次事故都是「绕过了这道关」：R16 的来源判定只比名字；R19 是第二个消费方
+/// 按裸名字取值，让一个已改名的字段偷走了当前字段的 `serde` 缺省值。引入
+/// 新类型就是为了让第三次不可能发生：**表是私有的，唯一读取入口带 provenance 参数**，
+/// 所以「按名字查属性」这种写法在 crate 内也编不过（`E0599`）。注意守住的边界是
+/// 「不许裸查」而不是「不可能被误用」——`new` 与访问器仍是 `pub(crate)`，构造时传
+/// 假的 provenance 参数照样能骗过它；真正堵死这一点需要把参数类型本身也收紧。
+#[derive(Clone)]
+pub(crate) struct FieldPassthrough(BTreeMap<Ident, Vec<Attribute>>);
+
+impl FieldPassthrough {
+    /// 构造入口，宏内部使用。
+    pub(crate) fn new(map: BTreeMap<Ident, Vec<Attribute>>) -> Self {
+        Self(map)
+    }
+
+    /// 字段 `ident` 在版本 `version` 上应当带哪些透传属性——**唯一**的读取入口。
+    ///
+    /// 判据两步，缺一不可：
+    /// 1. **来源**：沿迁移链回溯到 `version`，字段还在，且终点名仍是 `ident`
+    ///    （[`field_name_at`]）。终点名不同说明那一版叫这个名字的是**另一个**
+    ///    字段，哪怕同名同型。
+    /// 2. **类型**：它在那里的类型与今天的类型逐 token 相同。同源之后类型仍可能
+    ///    在某一版被改写（`n: i32 => n: String` 保名换型），那时 schema 已不同。
+    ///
+    /// 这一步偏向「不给」，但「不给」的后果分两个方向，见
+    /// `generate_old_version_structs` 里的落点注释。
+    pub(crate) fn attrs_for_field_at<'a>(
+        &'a self,
+        current_types: &BTreeMap<Ident, Type>,
+        final_version: &str,
+        version: &str,
+        hops: &[(String, Vec<MigrationField>, String)],
+        ident: &Ident,
+        ty_there: &Type,
+    ) -> &'a [Attribute] {
+        let Some(field_attrs) = self.0.get(ident) else {
+            return &[];
+        };
+
+        // 必须拿**终点名字**比对：同源但改名过的字段，在那一版里叫别的名字。
+        let Some(name_there) = field_name_at(ident, version, final_version, hops) else {
+            return &[];
+        };
+        if name_there.as_str() != ident.to_string().as_str() {
+            return &[];
+        }
+
+        let same_type = current_types.get(ident).is_some_and(|current_ty| {
+            current_ty.to_token_stream().to_string() == ty_there.to_token_stream().to_string()
+        });
+
+        if same_type {
+            field_attrs
+        } else {
+            &[]
+        }
+    }
+}
+
+/// 当前版本的字段 `field` 一路回溯到版本 `version` 时，**在那个版本里叫什么**。
+///
+/// 返回 `Some(name)` 表示「同一个字段在那个版本里叫 `name`」；`None` 表示
+/// 它在那版本里根本不存在。**只回答「是不是同一个字段」是不够的**：字段可能
+/// 在中间某跳被改名，于是在旧版本里的名字与今天不同（甚至与今天另一个字段
+/// 重名）。调用方必须拿这个**终点名字**去比对，而不是拿当前名字。
+///
+/// 名字加类型文本都不足以判定身份：一个名字可以被改名搬走之后又被新的 `Add`
+/// 重新占用。实证链条（`0.1 => 0.2 { n: i32 => m: i32 }` 后接
+/// `0.2 => 0.3 { + n: i32 }`）：0.1 的 `n` 就是被改名成 `m` 的那个字段，
+/// 而 0.3 的 `n` 是全新的——两者同名、同型，却毫无关系。更隐蔽的一种
+/// （R16）：`0.2 => 0.3 { w: i32 => x: i32 }` 配 `0.1 => 0.2 { x: i32 => y: i32 }`，
+/// 0.3 的 `x` 在线系上是 0.1 的 `w`，而 0.1 的 `x` 其实是 0.3 的 `y`——
+/// 若只带回一个 bool，属性就会落到 0.1 那个**同名的另一个字段**上。
+///
+/// 做法：从当前版本沿链往回走到 `version`，在当前名字上逐个 hop 反推
+/// （hop 的 `changes` 描述的是 `from` → `to`，`to` 一侧才是我们手上这一版）：
+/// - `Add { value: (name, ..) }` 且 `name == 当前名`：这一版的字段是刚加出来的，
+///   `from` 侧根本没有它 → `None`。
+/// - `Rename`/`Copy` 且 `target == 当前名`：这一版的字段由别的字段产出 →
+///   跟着**单源**继续往早走；多源则已无单一来源 → `None`。
+/// - `Remove { value: (name, ..) }` 且 `name == 当前名`：`Remove` 让该字段在
+///   `from` 侧重新出现，它是被删掉的那个，不是穿过来的同一个 → `None`。
+/// - 其余情况：字段名在这一跳原样穿过。
+///
+/// 残留边界：判定只沿**单条名字线**走。**互不相交**的一拍双改名
+/// （`a => b, c => d`）是合法写法，这条规则也处理得了；只有**互相重叠**的那种
+/// （交换 `a => b, b => a`，或把一个名字腾给另一个字段再接过来）写不出来——
+/// 推导出的旧结构体会塌掉，直接 `E0063`，因此那种语义下这条规则不会被误用。
+fn field_name_at(
+    field: &Ident,
+    version: &str,
+    final_version: &str,
+    hops: &[(String, Vec<MigrationField>, String)],
+) -> Option<String> {
+    // 当前版本自己：就是它自己的名字。
+    let mut current = field.to_string();
+    let mut at = final_version.to_owned();
+
+    while at != version {
+        // 找 `to == at` 的那一跳（链是位置性的，与 `lib.rs` 的回溯同款）。
+        let Some((from, changes, _)) = hops.iter().find(|(_, _, to)| *to == at) else {
+            // 走不到目标版本：链是断的，无法证明同源 → 当作不存在。
+            return None;
+        };
+
+        for change in changes {
+            match change {
+                MigrationField::Add { value, .. } => {
+                    if value.0 == current {
+                        return None;
+                    }
+                }
+                MigrationField::Rename { source, target, .. }
+                | MigrationField::Copy { source, target, .. } => {
+                    if target.0 == current {
+                        let [(source_ident, _)] = source.as_slice() else {
+                            return None;
+                        };
+                        current = source_ident.to_string();
+                    }
+                }
+                MigrationField::Remove { value, .. } => {
+                    if value.0 == current {
+                        return None;
+                    }
+                }
+            }
+        }
+
+        at = from.clone();
+    }
+
+    Some(current)
+}
 
 pub(crate) fn infer_older_version_struct(
     newer_struct_fields: BTreeMap<Ident, Type>,
@@ -23,19 +173,19 @@ pub(crate) fn infer_older_version_struct(
                 struct_fields.remove(target_ident);
 
                 for (ident, ty) in source.iter() {
-                    struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
+                    struct_fields.insert(ident.clone(), ty.clone());
                 }
             }
             MigrationField::Remove { value, .. } => {
                 let (ident, ty) = value;
-                struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
+                struct_fields.insert(ident.clone(), ty.clone());
             }
             MigrationField::Rename { source, target, .. } => {
                 let (target_ident, _) = target;
                 struct_fields.remove(target_ident);
 
                 for (ident, ty) in source.iter() {
-                    struct_fields.insert(ident.clone(), Type::Path(ty.clone()));
+                    struct_fields.insert(ident.clone(), ty.clone());
                 }
             }
         }
@@ -66,17 +216,43 @@ pub(crate) fn generate_old_version_structs(
     final_version: String,
     final_struct_fields: BTreeMap<Ident, Type>,
     extra_macros: Vec<TokenStream>,
+    field_attrs: FieldPassthrough,
     versions: Vec<(String, Vec<MigrationField>, String)>,
 ) -> Result<TokenStream> {
-    let old_version_structs =
-        generate_old_versions(final_version.clone(), final_struct_fields, versions)?;
+    let old_version_structs = generate_old_versions(
+        final_version.clone(),
+        final_struct_fields.clone(),
+        versions.clone(),
+    )?;
 
     let old_version_structs = old_version_structs
         .iter()
         .map(|(version, fields)| {
             let struct_name = generate_ident(&ident, version)?;
             let fields = fields.iter().map(|(ident, ty)| {
+                // 字段级透传属性只搬到「同源、同名且同型」的字段上，判据见
+                // [`attrs_for_field_at`]。当期版本的最终结构体落在
+                // `final_version` 那一份（`fields` 与源结构体逐字一致），
+                // 因此那里必然全量搬运。
+                //
+                // 不搬的后果**分两个方向**，不能一律说成「更安全」：
+                // - `default`（裸的或带函数）：不搬 = 旧字段保持必需。损坏的旧
+                //   载荷会报错而不是被补上默认值——这是**静默腐坏变响亮失败**。
+                // - `rename`/`alias`/`skip_serializing_if`/`with` 等改写线格式的
+                //   属性：不搬 = 旧版本结构体用**另一套** wire schema。改名键的
+                //   旧载荷会解析失败（响亮），而生成本该被跳过的键也会出现
+                //   （旧结构体的输出多字段）——这是**旧 schema 被改写**，不是
+                //   「更严格」，应当当作破坏性变更对待。
+                let attrs = field_attrs.attrs_for_field_at(
+                    &final_struct_fields,
+                    &final_version,
+                    version,
+                    &versions,
+                    ident,
+                    ty,
+                );
                 quote! {
+                    #(#attrs)*
                     #ident: #ty,
                 }
             });

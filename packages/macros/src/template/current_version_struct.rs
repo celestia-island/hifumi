@@ -73,6 +73,46 @@ pub(crate) fn generate_current_version_struct(
         }
     });
 
+    // 当前（公开）结构体本身只是数据载体：它在外界看到的 serde 表示由
+    // 下面的 `impl Serialize`/`impl Deserialize` 生成，那是**版本化文档**
+    // 表示（`$version` 标签 + 隐藏 final 明文结构）；明文那份表示只由隐藏
+    // final 结构体承担。公开结构体上带 `#[serde(...)]` 的那批字段，
+    // rustc 既没有可用的 derive 注册该 helper 属性（`cannot find attribute`），
+    // 语义也落在错误的表示上。因此把 serde 属性从公开结构体上摘掉：字段
+    // 属性已经在每一份隐藏结构体（含 final）上生效——透传的意义就是让
+    // 属性在**所有** serde 表示上一一 honoured。非 serde 的白名单属性
+    // （`doc`）照旧留在公开结构体上。`cfg` 不在这条路径上：它不被白名单
+    // 放行，而是在 `lib.rs` 的 `field_passthrough_attrs` 里直接报错。
+    //
+    // 透传表按字段名为键，而同名重复字段在生成副本里会变成字面重复字段
+    // （E0124），必须先拒掉，报在字段自己的 span 上而不是让生成物报错。
+    //
+    // 返回 `syn::Result` 而不是 here-then-panic：调用方把错误经
+    // `to_compile_error()` 送出去，用户看到的是字段 span 上的普通编译错误，
+    // 而不是 `custom attribute panicked` 把 span 丢掉。
+    let mut seen = std::collections::BTreeSet::new();
+    for field in struct_data.fields.iter() {
+        let Some(ident) = field.ident.as_ref() else {
+            continue;
+        };
+        if !seen.insert(ident.clone()) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "duplicate field `{ident}` on a #[version] struct: the macro \
+                     generates one struct per version and cannot represent the \
+                     same field name twice"
+                ),
+            )
+            .into());
+        }
+    }
+    let mut struct_data = struct_data;
+    for field in struct_data.fields.iter_mut() {
+        field.attrs.retain(|attr| !attr.path().is_ident("serde"));
+    }
+    let struct_data = struct_data;
+
     // Generate serialize implementation
 
     let impl_serialize_final_version_ident = generate_ident(&ident, &final_version)?;
