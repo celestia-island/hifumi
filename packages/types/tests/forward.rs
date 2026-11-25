@@ -229,14 +229,14 @@ fn meta_three_step_chain() {
 /// forward 与 strict 只在「无 tag」和「未知 tag」两行不同。
 ///
 /// 等价性破裂的**精确条件**：某步之后，存在一个**符合当前版本形状却不符合旧版本
-/// 形状**的旧载荷。「当前版本要求不再是旧版本的超集」是必要条件而非充分条件——
-/// 收窄重定型（`n: i32 => n: u8`）破坏超集关系，却造不出这样的载荷。`Remove`、
-/// `Rename`（无论目标是否必填）、以及放宽重定型（`n: i32 => n: String`）都会造出
-/// ——见下方两个 `forward_widens_*` 测试。
+/// 形状**的旧载荷——用「要求集合的超集关系」去刻画它不可靠（按值集读，放宽重定型
+/// `n: u8 => n: i32` 保持超集关系却仍宽化：`{"n":300}` 符合新形状不符合旧形状）。
+/// `Remove`、`Rename`（无论目标是否必填）、以及放宽重定型都会造出这样的载荷
+/// ——见下方两个 `forward_widens_*` 测试；收窄重定型（`n: i32 => n: u8`）造不出。
 /// 若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，**这张表**不会变红；那正
 /// 是「只加字段时不可区分」的含义。
 #[test]
-fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
+fn forward_add_only_boundary_moves_only_on_an_unresolvable_tag() -> Result<()> {
     #[version("0.2", forward)]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2" {
@@ -331,7 +331,7 @@ fn forward_widens_observably_after_a_remove_step() -> Result<()> {
 /// 这纠正了一个直觉错误：是否宽化与目标字段是否必填**无关**，只取决于「载荷符
 /// 合新形状但不符合旧形状」这一关系能否出现。
 #[test]
-fn forward_widens_across_rename_and_retype_steps_too() -> Result<()> {
+fn forward_widens_across_rename_and_widening_retype_steps() -> Result<()> {
     #[version("0.2", forward)]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2" {
