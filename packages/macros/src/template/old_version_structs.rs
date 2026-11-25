@@ -23,7 +23,10 @@ use crate::{tools::MigrationField, utils::generate_ident};
 ///
 /// 两次事故都是「绕过了这道关」：R16 的来源判定只比名字；R19 是第二个消费方
 /// 按裸名字取值，让一个已改名的字段偷走了当前字段的 `serde` 缺省值。引入
-/// 新类型就是为了让第三次不可能发生——编译器替我们守住，而不是靠注释提醒。
+/// 新类型就是为了让第三次不可能发生：**表是私有的，唯一读取入口带 provenance 参数**，
+/// 所以「按名字查属性」这种写法在 crate 内也编不过（`E0599`）。注意守住的边界是
+/// 「不许裸查」而不是「不可能被误用」——`new` 与访问器仍是 `pub(crate)`，构造时传
+/// 假的 provenance 参数照样能骗过它；真正堵死这一点需要把参数类型本身也收紧。
 #[derive(Clone)]
 pub(crate) struct FieldPassthrough(BTreeMap<Ident, Vec<Attribute>>);
 
