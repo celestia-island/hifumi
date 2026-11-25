@@ -220,15 +220,19 @@ fn meta_three_step_chain() {
     const { assert!(Chain::__HIFUMI_META.reversible) }
 }
 
-/// `forward` 的可观察边界——一张表钉死。机制上回退对**任何**版本化解码失败
-/// 都触发（生成的 `Deserialize` 里是 `Err(_)`），再按当前版本重读；但从外面
-/// 看，它与「只有版本定不下来才回退」不可区分：一个声明了已知旧版本、却不符
-/// 那个版本形状的载荷，落到当前版本形状后校验的是**同一份载荷**——让已知版本
-/// 失败的那个字段在那儿依然缺失或依然类型错，无论迁移步骤是加了字段还是删了
-/// 字段。所以**这张只加字段的表**里 forward 与 strict 只在「无 tag」和「未知
-/// tag」两行不同；删字段的情形见下方 `Remove` 表——那里边界确实会移动。若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，这张表**不会**变红
-/// ——那正是「不可区分」的含义；要让那种收窄可见，得先有一个当前版本比旧版本
-/// 要求更少的类型，而 `+ field` 迁移语法造不出那种类型。
+/// `forward` 的可观察边界（只加字段的链）——一张表钉死。机制上回退对**任何**
+/// 版本化解码失败都触发（生成的 `Deserialize` 里是 `Err(_)`），再按当前版本重读。
+/// 对**只加字段**的链，当前版本的要求是每个旧版本要求的超集：一个声明了已知旧
+/// 版本、却不符那个版本形状的载荷（缺字段或字段类型错），落到当前版本形状后
+/// 校验的是同一份载荷，让已知版本失败的那个字段在那儿依然缺失或依然类型错——
+/// 所以以同样的方式失败，与「只有版本定不下来才回退」不可区分。因此这张表里
+/// forward 与 strict 只在「无 tag」和「未知 tag」两行不同。
+///
+/// 等价性破裂的**精确条件**：某步之后，当前版本的要求不再是旧版本要求的超集。
+/// `Remove`、`Rename`（无论目标是否必填）、以及同名字段重定型（`n: i32 =>
+/// n: String`）都会造成这种破裂——见下方两个 `forward_widens_*` 测试。
+/// 若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，**这张表**不会变红；那正
+/// 是「只加字段时不可区分」的含义。
 #[test]
 fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
     #[version("0.2", forward)]
@@ -316,6 +320,66 @@ fn forward_widens_observably_only_when_a_step_removed_a_required_field() -> Resu
         let (f, s) = run(body);
         assert_eq!(f, fwd_ok, "forward  ← {body}  ({why})");
         assert_eq!(s, strict_ok, "strict   ← {body}  ({why})");
+    }
+    Ok(())
+}
+/// 等价性破裂的另外两种形态——`Rename`（即便是到**必填**目标）与同名字段重定型。
+/// 共同点：一个**已符合当前版本形状、却不符合旧版本形状**的旧载荷，在 forward
+/// 下被接受、不带则被拒绝。「缺所有字段」两边都 Err（当前版本仍要它的字段）。
+/// 这纠正了一个直觉错误：是否宽化与目标字段是否必填**无关**，只取决于「载荷符
+/// 合新形状但不符合旧形状」这一关系能否出现。
+#[test]
+fn forward_widens_across_rename_and_retype_steps_too() -> Result<()> {
+    #[version("0.2", forward)]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        c: u8 => d: i32 { i32::from(c) },
+    })]
+    struct FRenamed {
+        d: i32,
+    }
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        c: u8 => d: i32 { i32::from(c) },
+    })]
+    struct SRenamed {
+        d: i32,
+    }
+    #[version("0.2", forward)]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        n: i32 => n: String { n.to_string() },
+    })]
+    struct FRetyped {
+        n: String,
+    }
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        n: i32 => n: String { n.to_string() },
+    })]
+    struct SRetyped {
+        n: String,
+    }
+    let run = |body: &str| -> (bool, bool, bool, bool) {
+        let v: serde_json::Value = serde_json::from_str(body).expect("probe json");
+        (
+            serde_json::from_value::<FRenamed>(v.clone()).is_ok(),
+            serde_json::from_value::<SRenamed>(v.clone()).is_ok(),
+            serde_json::from_value::<FRetyped>(v.clone()).is_ok(),
+            serde_json::from_value::<SRetyped>(v).is_ok(),
+        )
+    };
+    //         payload                   renamed fwd/strict  retyped fwd/strict  why
+    for (body, rf, rs, tf, ts, why) in [
+        (r#"{"$version":"0.1","c":5}"#,   true,  true,  false, false, "the OLD shape: the step migrates it (renamed) / retype sees no n (both sides)"),
+        (r#"{"$version":"0.1","d":5}"#,   true,  false, false, false, "already the NEW shape, missing the old name: forward re-reads as current; strict's 0.1 wants c"),
+        (r#"{"$version":"0.1"}"#,         false, false, false, false, "nothing: the current version still requires its field"),
+        (r#"{"$version":"0.1","n":"7"}"#,  false, false, true,  false, "already the NEW (String) shape: forward re-reads; strict's 0.1 wants an i32 n"),
+    ] {
+        let (rf_, rs_, tf_, ts_) = run(body);
+        assert_eq!((rf_, rs_, tf_, ts_), (rf, rs, tf, ts), "{body}  ({why})");
     }
     Ok(())
 }
