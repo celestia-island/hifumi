@@ -250,3 +250,22 @@ fn passthrough_applies_to_downgrade_writes() -> Result<()> {
 
     Ok(())
 }
+
+/// token 扫描只认 `Ident`：字段名/键名里出现 `flatten` 这个**字符串**时不得误拒。
+/// （`"flatten"` 是 `Literal` 而不是 `Ident`，所以扫描不会命中。）
+#[test]
+fn flatten_as_a_string_is_not_a_rejection() -> Result<()> {
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    struct Conf {
+        #[serde(rename = "flatten")]
+        verbose: i32,
+    }
+
+    assert_eq!(
+        serde_json::from_str::<Conf>(r#"{"$version":"0.2","flatten":7}"#)?,
+        Conf { verbose: 7 }
+    );
+
+    Ok(())
+}

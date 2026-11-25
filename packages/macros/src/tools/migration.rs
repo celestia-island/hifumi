@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use syn::{
     bracketed, parenthesized,
     parse::{Parse, ParseStream},
@@ -51,20 +52,29 @@ fn field_attr_rejection(attr: &Attribute) -> Option<String> {
         return None;
     }
 
-    let mut rejected = None;
-    let _ = attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("flatten") {
-            rejected = Some(
-                "`#[serde(flatten)]` is not supported on a #[version] struct: the payload \
-                 of the `$version` internally tagged enum cannot be flattened"
-                    .to_string(),
-            );
-        }
-        // 继续吃掉剩余 token，让同名多条目也能完整遍历
-        let _ = meta.value();
-        Ok(())
-    });
-    rejected
+    // Token 扫描而不是 `parse_nested_meta`：后者的回调必须自己消费掉每个条目的
+    // token，遇到 `rename(serialize = "x")` 这类嵌套列表时 `meta.value()` 失败、
+    // 遍历就此中断，其后的 `flatten` 便逃过拒绝（实测可复现）。扫描 `Ident` 不会
+    // 误伤字符串里的同名文本——`"flatten"` 是 `Literal` 而不是 `Ident`。
+    if token_stream_mentions_ident(attr.meta.to_token_stream(), "flatten") {
+        return Some(
+            "`#[serde(flatten)]` is not supported on a #[version] struct: the payload \
+             of the `$version` internally tagged enum cannot be flattened"
+                .to_string(),
+        );
+    }
+    None
+}
+
+/// 递归判断一个 token 流里是否出现给定的 `Ident`（`Group` 内部也算）。
+///
+/// 只认 `Ident`：字符串字面量（如 `rename = "flatten"`）是 `Literal`，不会命中。
+fn token_stream_mentions_ident(stream: proc_macro2::TokenStream, needle: &str) -> bool {
+    stream.into_iter().any(|tree| match tree {
+        proc_macro2::TokenTree::Ident(ident) => ident == needle,
+        proc_macro2::TokenTree::Group(group) => token_stream_mentions_ident(group.stream(), needle),
+        _ => false,
+    })
 }
 
 /// 白名单：**只有** serde 与 doc 会被搬运。

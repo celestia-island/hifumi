@@ -71,6 +71,23 @@ struct Conf {
         anchor: "src/lib.rs:8:5",
     },
     Case {
+        // 回归：`rename(serialize = "x")` 是嵌套列表。用 `parse_nested_meta` +
+        // `meta.value()` 遍历时，遍历会在这个条目上失败中断，**其后的 flatten
+        // 便逃过拒绝**（改动前实测可编过）。拒绝改为 token 扫描后此例必须红。
+        label: "flatten_after_nested_meta",
+        body: r#"#[version("0.2")]
+#[derive(Debug, Clone, PartialEq)]
+struct Conf {
+    a: i32,
+    #[serde(rename(serialize = "x"), flatten)]
+    b: i32,
+}
+"#,
+        expected: "`#[serde(flatten)]` is not supported on a #[version] struct",
+        forbidden: "panicked",
+        anchor: "src/lib.rs:8:5",
+    },
+    Case {
         label: "duplicate",
         body: r#"#[version("0.2")]
 #[derive(Debug, Clone, PartialEq)]
