@@ -45,13 +45,13 @@ jobs:
           fetch-depth: 0
 
       - name: Assert the tag, the checkout and the trigger agree
-        # Two compares, not one: the checkout follows `${{ github.ref }}`, so
-        # HEAD *is* the tag — the first compare proves HEAD equals the tag the
-        # push named (and catches a tag force-moved after the run started),
-        # the second proves that HEAD is the commit GitHub says triggered this
-        # run. Together: tag == HEAD == github.sha. Without the second, a
-        # mismatch between the checkout and the triggering event would publish
-        # a tree the event never pointed at.
+        # Two compares. With `ref: ${{ github.ref }}` the local tag and HEAD come
+        # out of the same fetch, so the first compare (tag vs HEAD) is largely
+        # tautological against a corrupted checkout — what it really proves is
+        # that the ref we were handed peels to a commit at all. The load-bearing
+        # one is the **second**: HEAD vs `github.sha`. That is what catches a tag
+        # force-moved after the run started, or a checkout that drifted from the
+        # triggering event, and it is why both are kept.
         #
         # Tag names are collaborator-controlled text; pass them through `env`
         # rather than interpolating `${{ }}` into the script body.
