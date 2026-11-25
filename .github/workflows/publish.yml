@@ -24,14 +24,16 @@ jobs:
 
       # Publish the TAG's tree, never the branch's.
       #
-      # The run is triggered by a tag, and on a tag push `github.sha` is already
-      # the tag's commit — but the previous recipe did not pin the checkout and
-      # `cargo release publish --allow-branch HEAD` published whatever `master`
-      # said at push time, which is how `v0.2.1` shipped code `v0.2.0`'s tree
-      # never had, and why the published version and the tagged version could
-      # disagree. Pin the checkout to the tag's ref and prove the release commit
-      # is the tagged commit before anything reaches crates.io: the check fails
-      # the job instead of shipping a surprise tarball.
+      # On a tag push `github.sha` is the tag's commit and an unpinned checkout
+      # resolves to that same ref, so for THAT trigger the old recipe happened
+      # to publish the right tree (crates.io 0.2.1 matches tag v0.2.1). The
+      # hazard was `workflow_dispatch`, whose ref is a BRANCH: there the old
+      # recipe would have published whatever that branch said under a version
+      # taken from its own manifest. Two guards now make the tag the only
+      # release identity: the refuse step above rejects non-`v*` refs outright,
+      # and the checkout is pinned to the tag's ref with a proof that the release
+      # commit IS the tagged commit before anything reaches crates.io — the
+      # check fails the job instead of shipping a surprise tarball.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}

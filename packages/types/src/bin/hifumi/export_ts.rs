@@ -443,13 +443,15 @@ fn parse_back_body(content: ParseStream) -> syn::Result<()> {
 /// 不是 `Default` 的等值复制：只对名字最后一段恰好是这几个结构类型的路径成立，
 /// 同名的自定义类型会被当成结构类型处理（宁可接受也不猜）。
 ///
-/// 与宏侧 `<#ty as Default>::default()` 的关系是**子集、且两侧都不严格**，不是
-/// 「同一类型集」：这里拒绝 `[u8; 4]` 这类非路径类型与 `PathBuf` 这类没有结构
+/// 与宏侧 `<#ty as Default>::default()` 的关系**不是「同一类型集」**，两侧各有
+/// 对方没有的成员：这里拒绝 `[u8; 4]` 这类非路径类型与 `PathBuf` 这类没有结构
 /// 默认的路径（宏侧对它们照常调 `Default::default()`，只要求该类型真的实现了
 /// `Default`）；反过来，这里的「按名字最后一段猜」比宏侧的 trait 解析宽松。
 ///
 /// 裸 `str` 归到 `String`：`syn` 把 `str` 解析成 `Type::Path`（ident 为 `str`），
-/// 所以它确实会走到这里；`str: Default` 成立（空串）。
+/// 所以它确实会走到这里。注意 `str` 本身不是 `Default`（它是 unsized，只有
+/// `&str`/`&mut str` 实现 `Default`）；这里的映射是 TS 导出器对「字符串形态」
+/// 的投影决定，不是在复述 Rust 的 `Default` 实现。
 fn rust_default(ty: &Type) -> Result<Json> {
     let Type::Path(path) = ty else {
         bail!(
@@ -628,7 +630,8 @@ mod tests {
     }
 
     /// 裸 `str` 归到空串：`syn` 把 `str` 解析成 `Type::Path`（ident `str`），
-    /// 所以它确实会走到 `rust_default`，`str: Default` 也成立。
+    /// 所以它确实会走到 `rust_default`。（这是导出器的投影决定——`str` 本身
+    /// 不是 `Default`，unsized。）
     #[test]
     fn bare_str_projects_to_the_empty_string() {
         assert_eq!(
