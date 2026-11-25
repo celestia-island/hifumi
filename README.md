@@ -60,7 +60,7 @@ struct Config {
 
 ### Field Attributes
 
-`#[version]` writes the `Serialize`/`Deserialize` impls itself, so you cannot also `#[derive(Serialize)]` on the struct (E0119). Field-level `#[serde(...)]` attributes stay on the current version's struct and are forwarded by name to the hidden per-version structs, so `#[serde(default)]` works the way you expect:
+`#[version]` writes the `Serialize`/`Deserialize` impls itself, so you cannot also `#[derive(Serialize)]` on the struct (E0119). Field-level `#[serde(...)]` attributes stay on your source struct and are forwarded by name to the hidden per-version structs (the public struct has them stripped, since only the generated representations are serialized), so `#[serde(default)]` works the way you expect:
 
 ```rust
 use hifumi::version;

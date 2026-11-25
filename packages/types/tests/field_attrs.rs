@@ -3,8 +3,10 @@
 //! `#[version]` 宏自己生成 `Serialize`/`Deserialize`，用户因此不能再
 //! `#[derive(Serialize)]`（E0119），字段上的 `#[serde(...)]` 也无人注册——
 //! rustc 报 `cannot find attribute 'serde' in this scope`，**整份文件无法
-//! 编译**。这里的每个测试都是「缺了透传就不编译」的翡翠线：语义断言之外
-//! 还钉住 `$version` 标签位置与 wire 帧头哈希，证明透传没有动表示。
+//! 编译**。因此**凡是用 `#[serde(...)]` 的测试**都是「缺了透传就不编译」的
+//! 翡翠线；语义断言之外还钉住 `$version` 标签位置与 wire 帧头哈希，证明透传
+//! 没有动表示。`#[doc]` 不同：它在白名单里但只作注释，去掉透传它仍能编译，
+//! 见 `doc_attr_passes_through_without_invalid_serde`。
 
 use anyhow::Result;
 use hifumi::{version, wire};
@@ -198,7 +200,8 @@ fn passthrough_keeps_version_tag_and_wire_hash() -> Result<()> {
     Ok(())
 }
 
-/// 白名单外的属性（这里：`#[doc]`）不破坏编译，且不影响表示。
+/// 非 serde 的白名单属性（这里：`#[doc]`）不破坏编译，且不影响表示：
+/// 它被搬运到隐藏结构体上只是注释，不参与编解码。
 #[test]
 fn doc_attr_passes_through_without_invalid_serde() -> Result<()> {
     #[version("0.2")]

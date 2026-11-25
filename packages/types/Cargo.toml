@@ -46,6 +46,3 @@ postcard = { version = "1", default-features = false, features = [
 
 [dev-dependencies]
 specta = "1"
-# `tests/rejection_spans.rs` 用 span-locations 把宏拒绝的诊断钉到字段的
-# 精确行列；同一份源码既喂给夹具 crate，也在这里解析出期望位置。
-proc-macro2 = { version = "^1", features = ["span-locations"] }

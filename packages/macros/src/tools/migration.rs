@@ -28,14 +28,16 @@ pub struct Migration {
 /// 还要同名同型才成立，判据在
 /// [`crate::template::old_version_structs::attrs_for_older_field`]。
 ///
-/// 刻意不放行的三类，且都是**显式报错**而不是静默丢弃：
-/// - `cfg`：cfg 会按编译单元裁剪字段，宏无法在生成的历史结构体上重现同一
-///   组 cfg 条件，照搬会造出「public 结构体被裁掉、隐藏结构体还在」的字段集
-///   错位；`doc` 是纯注释、无此问题，照常透传。
-/// - `serde(flatten)`：内部标签枚举（`$version`）的载荷不允许 flatten，
-///   在这里放行等于让用户写一个必然编译失败的属性。
-/// - `specta(...)`：字段级 specta 属性只在类型本身 `#[derive(Type)]` 时合法，
-///   透传到未派生 Type 的隐藏结构体会变成未知属性编译错误。
+/// 刻意不放行的三类，处置**并不相同**——只有前两类会报错：
+/// - `cfg`：**报错**。cfg 会按编译单元裁剪字段，宏无法在生成的历史结构体上
+///   重现同一组 cfg 条件，照搬会造出「public 结构体被裁掉、隐藏结构体还在」
+///   的字段集错位。
+/// - `serde(flatten)`：**报错**。内部标签枚举（`$version`）的载荷不允许
+///   flatten，在这里放行等于让用户写一个必然编译失败的属性。
+/// - `specta(...)`：**静默丢弃**（不进白名单，也不报错）。字段级 specta 属性
+///   只在类型本身 `#[derive(Type)]` 时合法，透传到未派生 Type 的隐藏结构体
+///   会变成未知属性编译错误；但宏也无法断定用户是不是想表达别的意思，故只
+///   是不搬运。`doc` 是纯注释，照常透传。
 fn field_attr_rejection(attr: &Attribute) -> Option<String> {
     if attr.path().is_ident("cfg") {
         return Some(
@@ -65,7 +67,10 @@ fn field_attr_rejection(attr: &Attribute) -> Option<String> {
     rejected
 }
 
-/// 放行列表的补集：没有报错原因的字段属性才透传。
+/// 白名单：**只有** serde 与 doc 会被搬运。
+///
+/// 它只决定「搬什么」；「拒什么」由 [`field_attr_rejection`] 决定，两者不是
+/// 补集关系——`cfg` 在白名单外且会报错，`specta(...)` 在白名单外且**静默丢弃**。
 fn is_passthrough_attr(attr: &Attribute) -> bool {
     attr.path().is_ident("serde") || attr.path().is_ident("doc")
 }

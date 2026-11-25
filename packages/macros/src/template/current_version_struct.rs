@@ -81,7 +81,8 @@ pub(crate) fn generate_current_version_struct(
     // 语义也落在错误的表示上。因此把 serde 属性从公开结构体上摘掉：字段
     // 属性已经在每一份隐藏结构体（含 final）上生效——透传的意义就是让
     // 属性在**所有** serde 表示上一一 honoured。非 serde 的白名单属性
-    // （`cfg`/`doc`）照旧留在公开结构体上。
+    // （`doc`）照旧留在公开结构体上。`cfg` 不在这条路径上：它不被白名单
+    // 放行，而是在 `lib.rs` 的 `field_passthrough_attrs` 里直接报错。
     //
     // 透传表按字段名为键，而同名重复字段在生成副本里会变成字面重复字段
     // （E0124），必须先拒掉，报在字段自己的 span 上而不是让生成物报错。

@@ -76,8 +76,9 @@ struct Config {
 ### 字段属性
 
 `#[version]` 自己写出 `Serialize`/`Deserialize` 实现，因此你不能在结构体上再
-`#[derive(Serialize)]`（E0119）。字段级 `#[serde(...)]` 属性留在当前版本的结构体上，
-并由宏按名字搬运到隐藏的按版本结构体，`#[serde(default)]` 因此按预期生效：
+`#[derive(Serialize)]`（E0119）。字段级 `#[serde(...)]` 属性留在**你的源结构体**上，
+并由宏按名字搬运到隐藏的按版本结构体（公开结构体上这些属性会被摘掉——真正参与
+序列化的是生成的各份表示），`#[serde(default)]` 因此按预期生效：
 
 ```rust
 use hifumi::version;

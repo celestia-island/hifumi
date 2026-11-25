@@ -83,8 +83,9 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     // 字段级透传属性（serde/default 等）——宏自己生成 Serialize/Deserialize，
-    // 用户无法再 derive，故必须由宏把字段属性搬到每一份生成副本上。不支持的
-    // 字段属性在这里变成编译错误（而不是被静默丢掉）。
+    // 用户无法再 derive，故必须由宏把字段属性搬到每一份生成副本上。
+    // 只有 `cfg` 与 `serde(flatten)` 会在这里变成编译错误；其余不在白名单里的
+    // 属性（如 `specta(...)`）被**静默丢弃**，既不透传也不报错。
     let field_attrs = match input.field_passthrough_attrs() {
         Ok(attrs) => attrs,
         Err(e) => return e.to_compile_error().into(),

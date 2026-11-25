@@ -441,8 +441,15 @@ fn parse_back_body(content: ParseStream) -> syn::Result<()> {
 /// 按**名字最后一段**分类（`Vec<i32>`、`std::collections::HashMap<K, V>`、
 /// `Option<String>` 一律归结到 `Vec`/`HashMap`/`Option`）。这是**结构性投影**，
 /// 不是 `Default` 的等值复制：只对名字最后一段恰好是这几个结构类型的路径成立，
-/// 同名的自定义类型会被当成结构类型处理（宁可接受也不猜）。数组/元组/引用/
-/// 裸 `str` 等非路径类型没有可投影的结构默认，直接拒绝而不是猜。
+/// 同名的自定义类型会被当成结构类型处理（宁可接受也不猜）。
+///
+/// 与宏侧 `<#ty as Default>::default()` 的关系是**子集、且两侧都不严格**，不是
+/// 「同一类型集」：这里拒绝 `[u8; 4]` 这类非路径类型与 `PathBuf` 这类没有结构
+/// 默认的路径（宏侧对它们照常调 `Default::default()`，只要求该类型真的实现了
+/// `Default`）；反过来，这里的「按名字最后一段猜」比宏侧的 trait 解析宽松。
+///
+/// 裸 `str` 归到 `String`：`syn` 把 `str` 解析成 `Type::Path`（ident 为 `str`），
+/// 所以它确实会走到这里；`str: Default` 成立（空串）。
 fn rust_default(ty: &Type) -> Result<Json> {
     let Type::Path(path) = ty else {
         bail!(
@@ -459,7 +466,7 @@ fn rust_default(ty: &Type) -> Result<Json> {
         .map(|s| s.ident.to_string())
         .unwrap_or_default();
     match ident.as_str() {
-        "String" => Ok(Json::Str(String::new())),
+        "String" | "str" => Ok(Json::Str(String::new())),
         "bool" => Ok(Json::Bool(false)),
         "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128"
         | "isize" | "f32" | "f64" => Ok(Json::Int(0)),
@@ -570,10 +577,11 @@ mod tests {
         );
     }
 
-    /// 泛型 / 限定路径类型：分类器不得把它们读成比较表达式
-    /// （旧版 `TypePath` 子集对 `+ tags: Vec<i32>` 会吐
-    /// `comparison operators cannot be chained`），且默认值投影按名字
-    /// 最后一段走到与宏侧 `<T as Default>::default()` 相同的类型集。
+    /// 泛型 / 限定路径类型：默认值投影按**名字最后一段**分类，故
+    /// `Vec<i32>` 与 `std::vec::Vec<i32>` 等价。只钉分类与投影这一层：
+    /// 这里的解析器本来就吃 `Vec<i32>`（`TypePath` 子集自始支持），
+    /// 旧版报 `comparison operators cannot be chained` 的是**宏侧**把
+    /// 迁移类型 `#ty::default()` 拼进 `+` 表达式，与本函数无关。
     #[test]
     fn generic_and_qualified_types_classify() {
         assert_eq!(
@@ -613,10 +621,23 @@ mod tests {
             }
         );
         // 非路径类型（数组）没有可投影的默认值 → 拒绝，而不是猜。
-        // 注意：旧解析器在这一行会先以「expected identifier」失败，所以本断言
-        // 只钉「拒绝」这一事实，不钉具体是哪一层的拒绝。
+        // 这是本层自己的拒绝：`one_op` 直接走 `syn::parse_str`，不经宏，
+        // 故钉的就是 `rust_default` 的 `Type::Path` 前置条件。
         let err = one_op("+ grid: [u8; 4]").unwrap_err();
         assert!(err.to_string().contains("cannot express"), "{err}");
+    }
+
+    /// 裸 `str` 归到空串：`syn` 把 `str` 解析成 `Type::Path`（ident `str`），
+    /// 所以它确实会走到 `rust_default`，`str: Default` 也成立。
+    #[test]
+    fn bare_str_projects_to_the_empty_string() {
+        assert_eq!(
+            one_op("+ note: str").unwrap(),
+            TsOp::Add {
+                field: "note".into(),
+                default: Json::Str(String::new())
+            }
+        );
     }
 
     #[test]

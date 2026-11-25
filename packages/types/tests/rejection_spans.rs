@@ -80,8 +80,9 @@ struct Conf {
 }
 "#,
         expected: "duplicate field `a` on a #[version] struct",
-        // 拒绝被删掉后，rustc 会自己报 E0124；那条诊断既不是宏的，
-        // 也不在字段 span 上，两个断言都会红。
+        // 拒绝被删掉后，rustc 自己报的 E0124 **也**落在同一个 `8:5` 上
+        // （实测），所以单靠「失败 + 锚点对上」区分不开两件事；真正区分的是
+        // 这条反向排除。
         forbidden: "E0124",
         anchor: "src/lib.rs:8:5",
     },
@@ -172,17 +173,17 @@ fn assert_rejected(case: &Case) {
     );
 }
 
+/// 三条拒绝必须**串行**跑。
+///
+/// 每个用例都起一次嵌套的 `cargo build`（rustc + linker + 若干辅助线程）。
+/// 分成三个 `#[test]` 时它们会被测试框架并发拉起，在容器车道的
+/// `--pids-limit 512` 下把进程/线程配额耗尽——实测过
+/// `collect2: fatal error: posix_spawnp: Resource temporarily unavailable`
+/// 与 `failed to spawn helper thread ... WouldBlock`，三次里红一次。
+/// 测试内部控制不了 `--test-threads`，所以串行放在这里：一个测试、一个循环。
 #[test]
-fn cfg_on_a_field_is_rejected_on_its_own_span() {
-    assert_rejected(&CASES[0]);
-}
-
-#[test]
-fn serde_flatten_on_a_field_is_rejected_on_its_own_span() {
-    assert_rejected(&CASES[1]);
-}
-
-#[test]
-fn duplicate_field_names_are_rejected_on_the_field_span_not_a_panic() {
-    assert_rejected(&CASES[2]);
+fn unsupported_field_forms_are_rejected_on_the_field_span() {
+    for case in CASES {
+        assert_rejected(case);
+    }
 }
