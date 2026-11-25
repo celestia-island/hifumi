@@ -287,9 +287,9 @@ fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
 /// 于是「只缺那个被删字段」的旧版本载荷在 forward 下被接受（回落按当前版本重读，
 /// 不再要求 `c`），strict 下被拒绝（0.1 变体要求 `c`）。这是 forward 可观察宽化的
 /// **最清楚形态**；破裂的精确条件是「存在符合当前版本形状却不符合旧版本形状的旧
-/// 载荷」，`Rename` 与放宽重定型也能造出（见再下一张表）。README 的 forward 注释据此措辞。
+/// 载荷」，`Rename` 与放宽重定型也能造出（见下一张表）。README 的 forward 注释据此措辞。
 #[test]
-fn forward_widens_observably_only_when_a_step_removed_a_required_field() -> Result<()> {
+fn forward_widens_observably_after_a_remove_step() -> Result<()> {
     #[version("0.2", forward)]
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2" {
