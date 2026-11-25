@@ -223,9 +223,10 @@ fn meta_three_step_chain() {
 /// `forward` 的可观察边界——一张表钉死。机制上回退对**任何**版本化解码失败
 /// 都触发（生成的 `Deserialize` 里是 `Err(_)`），再按当前版本重读；但从外面
 /// 看，它与「只有版本定不下来才回退」不可区分：一个声明了已知旧版本、却不符
-/// 那个版本形状的载荷，落到当前版本形状上后要求的只会更多，于是以同样的
-/// 方式失败。所以这张表里 forward 与 strict 只在「无 tag」和「未知 tag」两行
-/// 不同。若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，这张表**不会**变红
+/// 那个版本形状的载荷，落到当前版本形状后校验的是**同一份载荷**——让已知版本
+/// 失败的那个字段在那儿依然缺失或依然类型错，无论迁移步骤是加了字段还是删了
+/// 字段（删字段见下方 `Remove` 表）。所以这张表里 forward 与 strict 只在「无 tag」
+/// 和「未知 tag」两行不同。若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，这张表**不会**变红
 /// ——那正是「不可区分」的含义；要让那种收窄可见，得先有一个当前版本比旧版本
 /// 要求更少的类型，而 `+ field` 迁移语法造不出那种类型。
 #[test]
@@ -272,6 +273,45 @@ fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
         let (f, s) = run(body);
         assert_eq!(f.is_ok(), fwd_ok, "forward  ← {body}  ({why}): {f:?}");
         assert_eq!(s.is_ok(), strict_ok, "strict   ← {body}  ({why}): {s:?}");
+    }
+    Ok(())
+}
+
+/// 同一张边界表，但迁移步骤是 **`Remove`**（当前版本比旧版本少一个字段）——
+/// 证明「不可区分」不靠「当前版本是超集」：让 0.1 变体失败的是缺 `a`，回落到
+/// 当前版本后 `a` 依然缺，照样 Err。无论步骤加字段还是删字段，结论相同。
+#[test]
+fn forward_boundary_holds_across_a_remove_step_too() -> Result<()> {
+    #[version("0.2", forward)]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        - c: i32,
+    })]
+    struct F {
+        a: i32,
+    }
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        - c: i32,
+    })]
+    struct S {
+        a: i32,
+    }
+    let run = |body: &str| -> (bool, bool) {
+        let v: serde_json::Value = serde_json::from_str(body).expect("probe json");
+        let f = serde_json::from_value::<F>(v.clone()).is_ok();
+        let s = serde_json::from_value::<S>(v).is_ok();
+        (f, s)
+    };
+    //         payload                       forward  strict  why
+    for (body, fwd_ok, strict_ok, why) in [
+        (r#"{"$version":"0.1","a":1,"c":9}"#, true,  true,  "the removed field is dropped by the step; both decode"),
+        (r#"{"$version":"0.1","c":9}"#,     false, false, "missing `a`, which BOTH versions require: the fallback re-checks the same payload and fails the same way"),
+    ] {
+        let (f, s) = run(body);
+        assert_eq!(f, fwd_ok, "forward  ← {body}  ({why})");
+        assert_eq!(s, strict_ok, "strict   ← {body}  ({why})");
     }
     Ok(())
 }
