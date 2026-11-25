@@ -219,3 +219,59 @@ fn meta_three_step_chain() {
     assert_eq!(Chain::__HIFUMI_META.versions, &["0.1", "0.2", "0.3"]);
     const { assert!(Chain::__HIFUMI_META.reversible) }
 }
+
+/// `forward` 的可观察边界——一张表钉死。机制上回退对**任何**版本化解码失败
+/// 都触发（生成的 `Deserialize` 里是 `Err(_)`），再按当前版本重读；但从外面
+/// 看，它与「只有版本定不下来才回退」不可区分：一个声明了已知旧版本、却不符
+/// 那个版本形状的载荷，落到当前版本形状上后要求的只会更多，于是以同样的
+/// 方式失败。所以这张表里 forward 与 strict 只在「无 tag」和「未知 tag」两行
+/// 不同。若将来有人把 `Err(_)` 收窄到「仅 tag 不在枚举里」，这张表**不会**变红
+/// ——那正是「不可区分」的含义；要让那种收窄可见，得先有一个当前版本比旧版本
+/// 要求更少的类型，而 `+ field` 迁移语法造不出那种类型。
+#[test]
+fn forward_observable_boundary_is_only_the_unresolvable_tag() -> Result<()> {
+    #[version("0.2", forward)]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        + b: String,
+    })]
+    struct Fwd {
+        a: i32,
+        b: String,
+    }
+    #[version("0.2")]
+    #[derive(Debug, Clone, PartialEq)]
+    #[migration("0.1" => "0.2" {
+        + b: String,
+    })]
+    struct Strict {
+        a: i32,
+        b: String,
+    }
+    type Verdict = Result<(), String>;
+    let run = |body: &str| -> (Verdict, Verdict) {
+        let v: serde_json::Value = serde_json::from_str(body).expect("probe json");
+        let f = serde_json::from_value::<Fwd>(v.clone())
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+        let s = serde_json::from_value::<Strict>(v)
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+        (f, s)
+    };
+    //           payload                           forward  strict   why
+    for (body, fwd_ok, strict_ok, why) in [
+        (r#"{"$version":"0.1","a":1}"#,             true,  true,  "known older version: the migration chain supplies the added field"),
+        (r#"{"$version":"0.1","a":"x","b":"y"}"#,    false, false, "known version, wrong-typed known field: refused both ways"),
+        (r#"{"$version":"0.1","b":"y"}"#,            false, false, "known version, missing its own required field: the fallback re-reads as the current version, which also requires it"),
+        (r#"{"$version":"0.2","a":"x","b":"y"}"#,    false, false, "current version, wrong-typed field: refused both ways"),
+        (r#"{"a":1,"b":"y"}"#,                       true,  false, "NO tag: forward re-reads leniently; strict reports a missing `$version`"),
+        (r#"{"$version":"9.9","a":1,"b":"y"}"#,      true,  false, "UNKNOWN tag: forward re-reads leniently; strict reports an unknown variant"),
+        (r#"{"$version":"9.9","a":"x","b":"y"}"#,    false, false, "unknown tag AND a wrong-typed known field: the lenient reader still type-checks what it knows"),
+    ] {
+        let (f, s) = run(body);
+        assert_eq!(f.is_ok(), fwd_ok, "forward  ← {body}  ({why}): {f:?}");
+        assert_eq!(s.is_ok(), strict_ok, "strict   ← {body}  ({why}): {s:?}");
+    }
+    Ok(())
+}
