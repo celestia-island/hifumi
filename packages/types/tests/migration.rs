@@ -500,17 +500,24 @@ fn add_qualified_path_field_defaults() -> Result<()> {
     #[derive(Debug, Clone, PartialEq)]
     #[migration("0.1" => "0.2" {
         + note: std::string::String,
+        + tags: Vec<i32>,
     })]
     struct Test {
         a: i32,
         note: std::string::String,
+        tags: Vec<i32>,
     }
 
+    // `tags: Vec<i32>` 是这条测试真正吃劲的地方：`Vec<i32>::default()` 会被
+    // rustc 读成比较表达式（`comparison operators cannot be chained`），只有
+    // `<Vec<i32> as Default>::default()` 能编译。限定路径 `std::string::String`
+    // 单独并不区分——`std::string::String::default()` 一直是合法的。
     assert_eq!(
         serde_json::from_str::<Test>(r#"{"$version":"0.1","a":1}"#)?,
         Test {
             a: 1,
-            note: String::new()
+            note: String::new(),
+            tags: Vec::new(),
         }
     );
 

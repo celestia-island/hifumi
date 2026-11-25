@@ -3,18 +3,53 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
-use syn::{Ident, Type};
+use syn::{Attribute, Ident, Type};
 
 use crate::{
     tools::{MigrationComment, MigrationField},
     utils::generate_ident,
 };
 
-use super::old_version_structs::infer_older_version_struct;
+use super::old_version_structs::{infer_older_version_struct, FieldPassthrough};
+
+/// 从字段属性里取出 `#[serde(default = "path")]` 的函数路径。
+///
+/// 只有带**路径**的 `default = ...` 才算；裸 `#[serde(default)]` 返回 `None`
+/// （那种写法就是「取 `Default::default()`」，与无属性时的行为一致）。
+///
+/// 用 token 扫描而不是 `parse_nested_meta`：`rename(serialize = "...")` 这类
+/// 嵌套列表会让回调的 `meta.value()` 失败并中断遍历（`migration.rs` 里同款
+/// 取舍），其后的条目就看不到了。
+fn serde_default_path(attrs: &[Attribute]) -> Option<TokenStream> {
+    let mut found = None;
+    for attr in attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+        // `parse_nested_meta` 交给回调的是每个条目的**内容**，`default` 那一项
+        // 直接就是 `default = "path"` 或裸 `default`，不必自己拆括号。
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("default") {
+                // 只有带 `= "path"` 的形式才算；裸 `default` 的 `meta.value()`
+                // 会失败，此时保持 `None`（等价于 `Default::default()`）。
+                if let Ok(value) = meta.value() {
+                    if let Ok(lit) = value.parse::<syn::LitStr>() {
+                        if let Ok(path) = syn::parse_str::<syn::Path>(&lit.value()) {
+                            found = Some(quote! { #path() });
+                        }
+                    }
+                }
+            }
+            Ok(())
+        });
+    }
+    found
+}
 
 fn generate_older_version_impl(
     old_struct_fields: BTreeMap<Ident, Type>,
     convert_rules: Vec<MigrationField>,
+    field_attrs: &FieldPassthrough,
 ) -> Result<BTreeMap<Ident, TokenStream>> {
     let mut struct_fields = old_struct_fields
         .keys()
@@ -43,16 +78,27 @@ fn generate_older_version_impl(
                         );
                     }
                     None => {
-                        // 无转换器的 Add = 取该类型的 `Default`。必须写成
-                        // 完全限定形式 `<T as Default>::default()`：`#ty::default()`
-                        // 只在 `ty` 是裸标识符路径时成立，`Vec<i32>` / `Option<String>` /
-                        // `std::collections::HashMap<K, V>` 这类带泛型参数或限定路径的
-                        // 类型会被 rustc 读成比较表达式（`comparison operators cannot
-                        // be chained`），而这几类恰恰是最常见的字段类型。
+                        // 无转换器的 Add = 该字段的 serde 缺省值。字段上如果
+                        // 写了 `#[serde(default = "path")]`，缺省值就是 `path()`，
+                        // 必须照抄——否则 0.2 载荷走 serde 缺省、0.1 载荷走
+                        // `Default::default()`，同一份数据的 `$version` 一换就
+                        // 得到不同的值（`#[serde(default="seven")] n: i32` +
+                        // `+ n: i32`：0.2 侧 n=7、0.1 侧 n=0）。而且对没有实现
+                        // `Default` 的类型（`NonZeroU32`、`PathBuf`…），只有
+                        // `path()` 这一条写得出来。
+                        //
+                        // 裸 `#[serde(default)]` 仍走 `Default::default()`：那正是
+                        // 它的语义。写成完全限定形式而不是 `#ty::default()`——
+                        // 后者只在 `ty` 是没有泛型实参的单段路径时成立，
+                        // `Vec<i32>` / `Option<String>` 会被读成比较表达式。
+                        let default_value = serde_default_path(
+                            field_attrs.get(key).map(Vec::as_slice).unwrap_or(&[]),
+                        )
+                        .unwrap_or_else(|| quote! { <#ty as ::core::default::Default>::default() });
                         struct_fields.insert(
                             key.clone(),
                             quote! {
-                                #key: <#ty as ::core::default::Default>::default()
+                                #key: #default_value
                             },
                         );
                     }
@@ -202,6 +248,7 @@ pub(crate) fn generate_impl_froms(
     final_version: String,
     final_struct_fields: BTreeMap<Ident, Type>,
     versions: Vec<MigrationComment>,
+    field_attrs: &FieldPassthrough,
 ) -> Result<TokenStream> {
     let mut temp_struct_fields = final_struct_fields.to_owned();
     let mut temp_version = final_version.clone();
@@ -231,8 +278,11 @@ pub(crate) fn generate_impl_froms(
             generate_ident(&ident, item.to.value())?
         };
 
-        let temp_struct_impl =
-            generate_older_version_impl(temp_struct_fields.clone(), item.changes.clone())?;
+        let temp_struct_impl = generate_older_version_impl(
+            temp_struct_fields.clone(),
+            item.changes.clone(),
+            field_attrs,
+        )?;
         let temp_struct_impl_nearly = temp_struct_impl.values();
 
         impl_froms.push(quote! {

@@ -90,6 +90,9 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         Ok(attrs) => attrs,
         Err(e) => return e.to_compile_error().into(),
     };
+    {
+        let _ = &field_attrs;
+    }
     let versions = {
         let mut temp_version = version_string.clone();
         let mut ret = vec![];
@@ -161,7 +164,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
                 }
             })
             .collect::<Vec<_>>(),
-        field_attrs,
+        field_attrs.clone(),
         versions.clone(),
     )
     .expect("Failed to generate old version structs");
@@ -183,6 +186,7 @@ pub fn version(attr: TokenStream, input: TokenStream) -> TokenStream {
         version_string.clone(),
         final_struct_fields.clone(),
         retained_migrations.clone(),
+        &field_attrs,
     )
     .expect("Failed to generate impl froms");
 
