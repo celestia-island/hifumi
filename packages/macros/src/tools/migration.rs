@@ -8,6 +8,7 @@ use syn::{
 };
 
 use super::MigrationComment;
+use crate::template::old_version_structs::FieldPassthrough;
 
 #[derive(Clone)]
 pub struct Migration {
@@ -256,7 +257,7 @@ impl Migration {
     ///
     /// 明确不支持的字段属性在**这里**报错并指到字段自己的 span：静默丢弃
     /// 会让用户以为 `#[serde(flatten)]` 生效了，而它其实什么也没做。
-    pub fn field_passthrough_attrs(&self) -> syn::Result<BTreeMap<Ident, Vec<Attribute>>> {
+    pub fn field_passthrough_attrs(&self) -> syn::Result<FieldPassthrough> {
         let mut map = BTreeMap::new();
 
         for field in self.struct_data.fields.iter() {
@@ -280,7 +281,7 @@ impl Migration {
             }
         }
 
-        Ok(map)
+        Ok(FieldPassthrough::new(map))
     }
 }
 

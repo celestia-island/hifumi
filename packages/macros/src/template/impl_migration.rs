@@ -10,9 +10,7 @@ use crate::{
     utils::generate_ident,
 };
 
-use super::old_version_structs::{
-    attrs_for_field_at, infer_older_version_struct, FieldPassthrough,
-};
+use super::old_version_structs::{infer_older_version_struct, FieldPassthrough};
 
 fn generate_older_version_impl(
     old_struct_fields: BTreeMap<Ident, Type>,
@@ -76,8 +74,7 @@ fn generate_older_version_impl(
                         // 它的语义。写成完全限定形式而不是 `#ty::default()`——
                         // 后者只在 `ty` 是没有泛型实参的单段路径时成立，
                         // `Vec<i32>` / `Option<String>` 会被读成比较表达式。
-                        let gate_attrs = attrs_for_field_at(
-                            field_attrs,
+                        let gate_attrs = field_attrs.attrs_for_field_at(
                             current_types,
                             final_version,
                             version,
